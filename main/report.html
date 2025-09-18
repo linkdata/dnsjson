@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (62.7%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (63.8%)</option>
 				
 				</select>
 			</div>
@@ -655,23 +655,17 @@ func wrapError(sentinel, err error) (out error) <span class="cov8" title="1">{
         <span class="cov8" title="1">return</span>
 }
 
-func (w *wrappedError) Error() string <span class="cov0" title="0">{
-        if w.err == nil </span><span class="cov0" title="0">{
-                return w.sentinel.Error()
-        }</span>
-        <span class="cov0" title="0">return w.sentinel.Error() + ": " + w.err.Error()</span>
-}
+func (w *wrappedError) Error() string <span class="cov8" title="1">{
+        return w.sentinel.Error() + ": " + w.err.Error()
+}</span>
 
 func (w *wrappedError) Unwrap() error <span class="cov8" title="1">{
         return w.err
 }</span>
 
 func (w *wrappedError) Is(target error) bool <span class="cov8" title="1">{
-        if target == w.sentinel </span><span class="cov8" title="1">{
-                return true
-        }</span>
-        <span class="cov0" title="0">return w.err != nil &amp;&amp; errors.Is(w.err, target)</span>
-}
+        return target == w.sentinel || errors.Is(w.err, target)
+}</span>
 
 type unknownTypeError struct {
         value string
