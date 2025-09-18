@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (57.2%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (58.2%)</option>
 				
 				</select>
 			</div>
@@ -526,7 +526,7 @@ func rrHdr(j RRJSON, t uint16, c uint16) dns.RR_Header <span class="cov8" title=
 
 func typeToString(t uint16) (s string) <span class="cov8" title="1">{
         var ok bool
-        if s, ok = dns.TypeToString[t]; !ok </span><span class="cov0" title="0">{
+        if s, ok = dns.TypeToString[t]; !ok </span><span class="cov8" title="1">{
                 s = strconv.FormatUint(uint64(t), 10)
         }</span>
         <span class="cov8" title="1">return</span>
@@ -611,7 +611,7 @@ func getInt(m map[string]any, key string) (n int64) <span class="cov8" title="1"
                                 n = int64(t)</span>
                         case int:<span class="cov8" title="1">
                                 n = int64(t)</span>
-                        case int64:<span class="cov0" title="0">
+                        case int64:<span class="cov8" title="1">
                                 n = t</span>
                         case json.Number:<span class="cov8" title="1">
                                 n, _ = t.Int64()</span>
