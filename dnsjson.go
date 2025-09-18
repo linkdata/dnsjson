@@ -47,7 +47,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 
@@ -301,21 +301,24 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 			// Choose concrete by type
 			switch typeCode {
 			case dns.TypeA:
-				ip := net.ParseIP(getString(j.Data, "a"))
-				if ip == nil || ip.To4() == nil {
-					return nil, fmt.Errorf("A.a must be IPv4")
+				var ip netip.Addr
+				if ip, err = netip.ParseAddr(getString(j.Data, "a")); err == nil {
+					if ip.Is4() {
+						rr = &dns.A{
+							Hdr: rrHdr(j, typeCode, classCode),
+							A:   ip.AsSlice(),
+						}
+					}
 				}
-				r := &dns.A{Hdr: rrHdr(j, typeCode, classCode)}
-				r.A = ip.To4()
-				return r, nil
 			case dns.TypeAAAA:
-				ip := net.ParseIP(getString(j.Data, "aaaa"))
-				if ip == nil || ip.To16() == nil {
-					return nil, fmt.Errorf("AAAA.aaaa must be IPv6")
-				}
-				rr = &dns.AAAA{
-					Hdr:  rrHdr(j, typeCode, classCode),
-					AAAA: ip.To16(),
+				var ip netip.Addr
+				if ip, err = netip.ParseAddr(getString(j.Data, "aaaa")); err == nil {
+					if ip.Is6() {
+						rr = &dns.AAAA{
+							Hdr:  rrHdr(j, typeCode, classCode),
+							AAAA: ip.AsSlice(),
+						}
+					}
 				}
 			case dns.TypeCNAME:
 				rr = &dns.CNAME{
