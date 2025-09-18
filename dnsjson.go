@@ -358,15 +358,15 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 			case dns.TypeMX:
 				rr = &dns.MX{
 					Hdr:        rrHdr(j, typeCode, classCode),
-					Preference: uint16(getInt(j.Data, "preference")),
+					Preference: getUint16(j.Data, "preference"),
 					Mx:         getString(j.Data, "mx"),
 				}
 			case dns.TypeSRV:
 				rr = &dns.SRV{
 					Hdr:      rrHdr(j, typeCode, classCode),
-					Priority: uint16(getInt(j.Data, "priority")),
-					Weight:   uint16(getInt(j.Data, "weight")),
-					Port:     uint16(getInt(j.Data, "port")),
+					Priority: getUint16(j.Data, "priority"),
+					Weight:   getUint16(j.Data, "weight"),
+					Port:     getUint16(j.Data, "port"),
 					Target:   getString(j.Data, "target"),
 				}
 			case dns.TypeSOA:
@@ -374,24 +374,24 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 					Hdr:     rrHdr(j, typeCode, classCode),
 					Ns:      getString(j.Data, "ns"),
 					Mbox:    getString(j.Data, "mbox"),
-					Serial:  uint32(getInt(j.Data, "serial")),
-					Refresh: uint32(getInt(j.Data, "refresh")),
-					Retry:   uint32(getInt(j.Data, "retry")),
-					Expire:  uint32(getInt(j.Data, "expire")),
-					Minttl:  uint32(getInt(j.Data, "minttl")),
+					Serial:  getUint32(j.Data, "serial"),
+					Refresh: getUint32(j.Data, "refresh"),
+					Retry:   getUint32(j.Data, "retry"),
+					Expire:  getUint32(j.Data, "expire"),
+					Minttl:  getUint32(j.Data, "minttl"),
 				}
 			case dns.TypeCAA:
 				rr = &dns.CAA{
 					Hdr:   rrHdr(j, typeCode, classCode),
-					Flag:  uint8(getInt(j.Data, "flag")),
+					Flag:  getUint8(j.Data, "flag"),
 					Tag:   getString(j.Data, "tag"),
 					Value: getString(j.Data, "value"),
 				}
 			case dns.TypeNAPTR:
 				rr = &dns.NAPTR{
 					Hdr:         rrHdr(j, typeCode, classCode),
-					Order:       uint16(getInt(j.Data, "order")),
-					Preference:  uint16(getInt(j.Data, "preference")),
+					Order:       getUint16(j.Data, "order"),
+					Preference:  getUint16(j.Data, "preference"),
 					Flags:       getString(j.Data, "flags"),
 					Service:     getString(j.Data, "service"),
 					Regexp:      getString(j.Data, "regexp"),
@@ -400,17 +400,17 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 			case dns.TypeDS:
 				rr = &dns.DS{
 					Hdr:        rrHdr(j, typeCode, classCode),
-					KeyTag:     uint16(getInt(j.Data, "key_tag")),
-					Algorithm:  uint8(getInt(j.Data, "algorithm")),
-					DigestType: uint8(getInt(j.Data, "digest_type")),
+					KeyTag:     getUint16(j.Data, "key_tag"),
+					Algorithm:  getUint8(j.Data, "algorithm"),
+					DigestType: getUint8(j.Data, "digest_type"),
 					Digest:     strings.ToUpper(getString(j.Data, "digest")),
 				}
 			case dns.TypeDNSKEY:
 				rr = &dns.DNSKEY{
 					Hdr:       rrHdr(j, typeCode, classCode),
-					Flags:     uint16(getInt(j.Data, "flags")),
-					Protocol:  uint8(getInt(j.Data, "protocol")),
-					Algorithm: uint8(getInt(j.Data, "algorithm")),
+					Flags:     getUint16(j.Data, "flags"),
+					Protocol:  getUint8(j.Data, "protocol"),
+					Algorithm: getUint8(j.Data, "algorithm"),
 					PublicKey: getString(j.Data, "public_key"),
 				}
 			case dns.TypeRRSIG:
@@ -419,12 +419,12 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 					rr = &dns.RRSIG{
 						Hdr:         rrHdr(j, typeCode, classCode),
 						TypeCovered: cov,
-						Algorithm:   uint8(getInt(j.Data, "algorithm")),
-						Labels:      uint8(getInt(j.Data, "labels")),
-						OrigTtl:     uint32(getInt(j.Data, "original_ttl")),
-						Expiration:  uint32(getInt(j.Data, "expiration")),
-						Inception:   uint32(getInt(j.Data, "inception")),
-						KeyTag:      uint16(getInt(j.Data, "key_tag")),
+						Algorithm:   getUint8(j.Data, "algorithm"),
+						Labels:      getUint8(j.Data, "labels"),
+						OrigTtl:     getUint32(j.Data, "original_ttl"),
+						Expiration:  getUint32(j.Data, "expiration"),
+						Inception:   getUint32(j.Data, "inception"),
+						KeyTag:      getUint16(j.Data, "key_tag"),
 						SignerName:  getString(j.Data, "signer_name"),
 						Signature:   getString(j.Data, "signature"),
 					}
@@ -432,9 +432,9 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 			case dns.TypeTLSA:
 				rr = &dns.TLSA{
 					Hdr:          rrHdr(j, typeCode, classCode),
-					Usage:        uint8(getInt(j.Data, "usage")),
-					Selector:     uint8(getInt(j.Data, "selector")),
-					MatchingType: uint8(getInt(j.Data, "matching_type")),
+					Usage:        getUint8(j.Data, "usage"),
+					Selector:     getUint8(j.Data, "selector"),
+					MatchingType: getUint8(j.Data, "matching_type"),
 					Certificate:  getString(j.Data, "cert_data"),
 				}
 			default:
@@ -526,6 +526,17 @@ func getString(m map[string]any, key string) string {
 	}
 	return ""
 }
+
+func getUint8(m map[string]any, key string) uint8 {
+	return uint8(getInt(m, key)) // #nosec G115
+}
+func getUint16(m map[string]any, key string) uint16 {
+	return uint16(getInt(m, key)) // #nosec G115
+}
+func getUint32(m map[string]any, key string) uint32 {
+	return uint32(getInt(m, key)) // #nosec G115
+}
+
 func getInt(m map[string]any, key string) int64 {
 	if m == nil {
 		return 0
