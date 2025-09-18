@@ -59,6 +59,20 @@ type Msg dns.Msg
 var _ json.Marshaler = &Msg{}
 var _ json.Unmarshaler = &Msg{}
 
+var (
+	ErrEmptyInput         = errors.New("dnsjson: empty input")
+	ErrInvalidJSON        = errors.New("dnsjson: invalid JSON")
+	ErrInvalidMessage     = errors.New("dnsjson: invalid message")
+	ErrQuestionQType      = errors.New("dnsjson: question qtype")
+	ErrQuestionQClass     = errors.New("dnsjson: question qclass")
+	ErrAnswerSection      = errors.New("answer")
+	ErrNsSection          = errors.New("ns")
+	ErrExtraSection       = errors.New("extra")
+	ErrUnknownType        = errors.New("unknown type")
+	ErrUnknownClass       = errors.New("unknown class")
+	ErrInvalidStringSlice = errors.New("invalid string slice")
+)
+
 // MessageJSON is the top-level JSON shape for dns.Msg.
 type MessageJSON struct {
 	ID       uint16     `json:"id"`
@@ -122,18 +136,18 @@ func (m *Msg) MarshalJSON() ([]byte, error) {
 
 func (msg *Msg) UnmarshalJSON(data []byte) error {
 	if len(data) == 0 {
-		return errors.New("dnsjson: empty input")
+		return ErrEmptyInput
 	}
 	var raw json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("dnsjson: invalid JSON: %w", err)
+		return wrapError(ErrInvalidJSON, err)
 	}
 	if string(raw) == "null" {
 		return nil
 	}
 	var j MessageJSON
 	if err := json.Unmarshal(raw, &j); err != nil {
-		return fmt.Errorf("dnsjson: invalid message: %w", err)
+		return wrapError(ErrInvalidMessage, err)
 	}
 
 	msg.Id = j.ID
@@ -142,24 +156,24 @@ func (msg *Msg) UnmarshalJSON(data []byte) error {
 	for _, qj := range j.Question {
 		qt, err := stringToType(qj.Qtype)
 		if err != nil {
-			return fmt.Errorf("dnsjson: question qtype: %w", err)
+			return wrapError(ErrQuestionQType, err)
 		}
 		qc, err := stringToClass(qj.Qclass)
 		if err != nil {
-			return fmt.Errorf("dnsjson: question qclass: %w", err)
+			return wrapError(ErrQuestionQClass, err)
 		}
 		msg.Question = append(msg.Question, dns.Question{Name: qj.Name, Qtype: qt, Qclass: qc})
 	}
 	// Sections
 	var err error
 	if msg.Answer, err = rrsFromJSON(j.Answer); err != nil {
-		return fmt.Errorf("answer: %w", err)
+		return wrapError(ErrAnswerSection, err)
 	}
 	if msg.Ns, err = rrsFromJSON(j.Ns); err != nil {
-		return fmt.Errorf("ns: %w", err)
+		return wrapError(ErrNsSection, err)
 	}
 	if msg.Extra, err = rrsFromJSON(j.Extra); err != nil {
-		return fmt.Errorf("extra: %w", err)
+		return wrapError(ErrExtraSection, err)
 	}
 	return nil
 }
@@ -468,7 +482,7 @@ func stringToType(s string) (typ uint16, err error) {
 		if n, err = strconv.ParseUint(s, 10, 16); err == nil {
 			typ = uint16(n)
 		} else {
-			err = fmt.Errorf("unknown type %q", s)
+			err = &unknownTypeError{value: s}
 		}
 	}
 	return
@@ -489,7 +503,7 @@ func stringToClass(s string) (cls uint16, err error) {
 		if n, err = strconv.ParseUint(s, 10, 16); err == nil {
 			cls = uint16(n)
 		} else {
-			err = fmt.Errorf("unknown class %q", s)
+			err = &unknownClassError{value: s}
 		}
 	}
 	return
@@ -556,15 +570,81 @@ func getStringSlice(m map[string]any, key string) (out []string, err error) {
 	if v, ok := m[key]; ok {
 		a, ok := v.([]any)
 		if !ok {
-			return nil, fmt.Errorf("%s must be array of strings", key)
+			return nil, &stringSliceError{key: key}
 		}
 		for _, it := range a {
 			s, ok := it.(string)
 			if !ok {
-				return nil, fmt.Errorf("%s must be array of strings", key)
+				return nil, &stringSliceError{key: key}
 			}
 			out = append(out, s)
 		}
 	}
 	return
+}
+
+type wrappedError struct {
+	sentinel error
+	err      error
+}
+
+func wrapError(sentinel, err error) error {
+	if err == nil {
+		return sentinel
+	}
+	return &wrappedError{sentinel: sentinel, err: err}
+}
+
+func (w *wrappedError) Error() string {
+	if w.err == nil {
+		return w.sentinel.Error()
+	}
+	return w.sentinel.Error() + ": " + w.err.Error()
+}
+
+func (w *wrappedError) Unwrap() error {
+	return w.err
+}
+
+func (w *wrappedError) Is(target error) bool {
+	if target == w.sentinel {
+		return true
+	}
+	return w.err != nil && errors.Is(w.err, target)
+}
+
+type unknownTypeError struct {
+	value string
+}
+
+func (e *unknownTypeError) Error() string {
+	return "unknown type " + strconv.Quote(e.value)
+}
+
+func (e *unknownTypeError) Is(target error) bool {
+	return target == ErrUnknownType
+}
+
+type unknownClassError struct {
+	value string
+}
+
+func (e *unknownClassError) Error() string {
+	return "unknown class " + strconv.Quote(e.value)
+}
+
+func (e *unknownClassError) Is(target error) bool {
+	return target == ErrUnknownClass
+}
+
+type stringSliceError struct {
+	key string
+}
+
+func (e *stringSliceError) Error() string {
+	return e.key + " must be array of strings"
+}
+
+func (e *stringSliceError) Is(target error) bool {
+	return target == ErrInvalidStringSlice
 }

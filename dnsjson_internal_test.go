@@ -2,6 +2,7 @@ package dnsjson
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -237,5 +238,88 @@ func TestRRsFromJSONAggregatesErrors(t *testing.T) {
 	}
 	if got[0].Header().Name != "valid.example." {
 		t.Fatalf("unexpected RR in output: %v", got[0])
+	}
+}
+
+func TestWrapError(t *testing.T) {
+	t.Parallel()
+
+	if got := wrapError(ErrInvalidJSON, nil); got != ErrInvalidJSON {
+		t.Fatalf("wrapError should return sentinel when err nil: got %v", got)
+	}
+
+	base := errors.New("boom")
+	err := wrapError(ErrInvalidJSON, base)
+	if !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("expected errors.Is to match sentinel: %v", err)
+	}
+	if errors.Unwrap(err) != base {
+		t.Fatalf("expected unwrap to yield original error, got %v", errors.Unwrap(err))
+	}
+}
+
+func TestUnknownTypeErrorIs(t *testing.T) {
+	t.Parallel()
+
+	_, err := stringToType("definitely-unknown")
+	if err == nil {
+		t.Fatal("expected error for unknown type")
+	}
+	if !errors.Is(err, ErrUnknownType) {
+		t.Fatalf("expected errors.Is to match ErrUnknownType: %v", err)
+	}
+	if errors.Is(err, ErrUnknownClass) {
+		t.Fatalf("unexpected match against ErrUnknownClass: %v", err)
+	}
+
+	var ute *unknownTypeError
+	if !errors.As(err, &ute) {
+		t.Fatalf("expected unknownTypeError, got %T", err)
+	}
+	if ute.Error() != "unknown type \"definitely-unknown\"" {
+		t.Fatalf("unexpected error string: %q", ute.Error())
+	}
+}
+
+func TestUnknownClassErrorIs(t *testing.T) {
+	t.Parallel()
+
+	_, err := stringToClass("definitely-unknown")
+	if err == nil {
+		t.Fatal("expected error for unknown class")
+	}
+	if !errors.Is(err, ErrUnknownClass) {
+		t.Fatalf("expected errors.Is to match ErrUnknownClass: %v", err)
+	}
+	if errors.Is(err, ErrUnknownType) {
+		t.Fatalf("unexpected match against ErrUnknownType: %v", err)
+	}
+
+	var uce *unknownClassError
+	if !errors.As(err, &uce) {
+		t.Fatalf("expected unknownClassError, got %T", err)
+	}
+	if uce.Error() != "unknown class \"definitely-unknown\"" {
+		t.Fatalf("unexpected error string: %q", uce.Error())
+	}
+}
+
+func TestStringSliceErrorIs(t *testing.T) {
+	t.Parallel()
+
+	_, err := getStringSlice(map[string]any{"txt": "not-a-slice"}, "txt")
+	if err == nil {
+		t.Fatal("expected error for invalid string slice")
+	}
+	if !errors.Is(err, ErrInvalidStringSlice) {
+		t.Fatalf("expected errors.Is to match ErrInvalidStringSlice: %v", err)
+	}
+
+	var sse *stringSliceError
+	if !errors.As(err, &sse) {
+		t.Fatalf("expected stringSliceError, got %T", err)
+	}
+	if sse.Error() != "txt must be array of strings" {
+		t.Fatalf("unexpected error string: %q", sse.Error())
 	}
 }
