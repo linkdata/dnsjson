@@ -97,7 +97,6 @@ type RRJSON struct {
 	Data  map[string]any `json:"data"`
 }
 
-// Marshal converts *dns.Msg -> JSON bytes using the explicit schema.
 func (m *Msg) MarshalJSON() ([]byte, error) {
 	if m == nil {
 		return []byte("null"), nil
@@ -115,16 +114,9 @@ func (m *Msg) MarshalJSON() ([]byte, error) {
 		})
 	}
 	// Sections
-	var err error
-	if j.Answer, err = rrsToJSON(m.Answer); err != nil {
-		return nil, err
-	}
-	if j.Ns, err = rrsToJSON(m.Ns); err != nil {
-		return nil, err
-	}
-	if j.Extra, err = rrsToJSON(m.Extra); err != nil {
-		return nil, err
-	}
+	j.Answer = rrsToJSON(m.Answer)
+	j.Ns = rrsToJSON(m.Ns)
+	j.Extra = rrsToJSON(m.Extra)
 	return json.Marshal(j)
 }
 
@@ -189,8 +181,7 @@ func hdrToJSON(h dns.MsgHdr) MsgHdr {
 	}
 }
 
-func hdrFromJSON(j MsgHdr) dns.MsgHdr {
-	mh := dns.MsgHdr{}
+func hdrFromJSON(j MsgHdr) (mh dns.MsgHdr) {
 	mh.Response = j.QR
 	mh.Opcode = stringToOpcode(j.Opcode)
 	mh.Authoritative = j.AA
@@ -201,34 +192,28 @@ func hdrFromJSON(j MsgHdr) dns.MsgHdr {
 	mh.AuthenticatedData = j.AD
 	mh.CheckingDisabled = j.CD
 	mh.Rcode = stringToRcode(j.Rcode)
-	return mh
+	return
 }
 
-func rrsToJSON(rrs []dns.RR) ([]RRJSON, error) {
-	out := make([]RRJSON, 0, len(rrs))
+func rrsToJSON(rrs []dns.RR) (out []RRJSON) {
 	for _, rr := range rrs {
-		j, err := rrToJSON(rr)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, j)
+		out = append(out, rrToJSON(rr))
 	}
-	return out, nil
+	return
 }
 
-func rrsFromJSON(rrjs []RRJSON) ([]dns.RR, error) {
-	out := make([]dns.RR, 0, len(rrjs))
+func rrsFromJSON(rrjs []RRJSON) (out []dns.RR, err error) {
 	for _, j := range rrjs {
-		rr, err := rrFromJSON(j)
-		if err != nil {
-			return nil, err
+		if rr, e := rrFromJSON(j); e == nil {
+			out = append(out, rr)
+		} else {
+			err = errors.Join(err, e)
 		}
-		out = append(out, rr)
 	}
-	return out, nil
+	return
 }
 
-func rrToJSON(rr dns.RR) (RRJSON, error) {
+func rrToJSON(rr dns.RR) RRJSON {
 	h := rr.Header()
 	j := RRJSON{
 		Name:  h.Name,
@@ -306,7 +291,7 @@ func rrToJSON(rr dns.RR) (RRJSON, error) {
 		// Fallback to presentation for unknown types to maintain coverage without wire format.
 		j.Data["raw"] = rr.String()
 	}
-	return j, nil
+	return j
 }
 
 func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
