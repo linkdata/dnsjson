@@ -244,8 +244,8 @@ func TestRRsFromJSONAggregatesErrors(t *testing.T) {
 func TestWrapError(t *testing.T) {
 	t.Parallel()
 
-	if got := wrapError(ErrInvalidJSON, nil); got != ErrInvalidJSON {
-		t.Fatalf("wrapError should return sentinel when err nil: got %v", got)
+	if got := wrapError(ErrInvalidJSON, nil); got != nil {
+		t.Fatalf("wrapError should return nil when err nil: got %v", got)
 	}
 
 	base := errors.New("boom")

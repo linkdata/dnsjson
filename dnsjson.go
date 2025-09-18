@@ -134,48 +134,37 @@ func (m *Msg) MarshalJSON() (b []byte, err error) {
 	return
 }
 
-func (msg *Msg) UnmarshalJSON(data []byte) error {
-	if len(data) == 0 {
-		return ErrEmptyInput
-	}
-	var raw json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return wrapError(ErrInvalidJSON, err)
-	}
-	if string(raw) == "null" {
-		return nil
-	}
-	var j MessageJSON
-	if err := json.Unmarshal(raw, &j); err != nil {
-		return wrapError(ErrInvalidMessage, err)
-	}
-
-	msg.Id = j.ID
-	msg.MsgHdr = hdrFromJSON(j.MsgHdr)
-	// Questions
-	for _, qj := range j.Question {
-		qt, err := stringToType(qj.Qtype)
-		if err != nil {
-			return wrapError(ErrQuestionQType, err)
+func (msg *Msg) UnmarshalJSON(data []byte) (err error) {
+	err = ErrEmptyInput
+	if len(data) > 0 {
+		var raw json.RawMessage
+		if err = wrapError(ErrInvalidJSON, json.Unmarshal(data, &raw)); err == nil {
+			if string(raw) != "null" {
+				var j MessageJSON
+				if err = wrapError(ErrInvalidMessage, json.Unmarshal(raw, &j)); err == nil {
+					msg.Id = j.ID
+					msg.MsgHdr = hdrFromJSON(j.MsgHdr)
+					// Questions
+					for _, qj := range j.Question {
+						qt, e := stringToType(qj.Qtype)
+						err = errors.Join(err, wrapError(ErrQuestionQType, e))
+						qc, e := stringToClass(qj.Qclass)
+						err = errors.Join(err, wrapError(ErrQuestionQClass, e))
+						msg.Question = append(msg.Question, dns.Question{Name: qj.Name, Qtype: qt, Qclass: qc})
+					}
+					// Sections
+					var e error
+					msg.Answer, e = rrsFromJSON(j.Answer)
+					err = errors.Join(err, wrapError(ErrAnswerSection, e))
+					msg.Ns, e = rrsFromJSON(j.Ns)
+					err = errors.Join(err, wrapError(ErrNsSection, e))
+					msg.Extra, e = rrsFromJSON(j.Extra)
+					err = errors.Join(err, wrapError(ErrExtraSection, e))
+				}
+			}
 		}
-		qc, err := stringToClass(qj.Qclass)
-		if err != nil {
-			return wrapError(ErrQuestionQClass, err)
-		}
-		msg.Question = append(msg.Question, dns.Question{Name: qj.Name, Qtype: qt, Qclass: qc})
 	}
-	// Sections
-	var err error
-	if msg.Answer, err = rrsFromJSON(j.Answer); err != nil {
-		return wrapError(ErrAnswerSection, err)
-	}
-	if msg.Ns, err = rrsFromJSON(j.Ns); err != nil {
-		return wrapError(ErrNsSection, err)
-	}
-	if msg.Extra, err = rrsFromJSON(j.Extra); err != nil {
-		return wrapError(ErrExtraSection, err)
-	}
-	return nil
+	return
 }
 
 // --- helpers ---
@@ -588,11 +577,11 @@ type wrappedError struct {
 	err      error
 }
 
-func wrapError(sentinel, err error) error {
-	if err == nil {
-		return sentinel
+func wrapError(sentinel, err error) (out error) {
+	if err != nil {
+		out = &wrappedError{sentinel: sentinel, err: err}
 	}
-	return &wrappedError{sentinel: sentinel, err: err}
+	return
 }
 
 func (w *wrappedError) Error() string {
