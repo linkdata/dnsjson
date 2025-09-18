@@ -63,6 +63,27 @@ func TestClassToString(t *testing.T) {
 	}
 }
 
+func TestTypeToString(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   uint16
+		want string
+	}{
+		{name: "known type", in: dns.TypeAAAA, want: "AAAA"},
+		{name: "unknown type", in: 9999, want: "9999"},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := typeToString(tc.in); got != tc.want {
+				t.Fatalf("typeToString(%d) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStringToClass(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -100,10 +121,11 @@ func TestStringToClass(t *testing.T) {
 func TestGetUintHelpers(t *testing.T) {
 	t.Parallel()
 	m := map[string]any{
-		"u8":   float64(42),
-		"u16":  int(65535),
-		"u32n": json.Number("123456"),
-		"u32s": "789",
+		"u8":    float64(42),
+		"u16":   int(65535),
+		"u32n":  json.Number("123456"),
+		"u32s":  "789",
+		"int64": int64(65535),
 	}
 
 	if got := getUint8(m, "u8"); got != 42 {
@@ -120,6 +142,9 @@ func TestGetUintHelpers(t *testing.T) {
 	}
 	if got := getUint16(m, "missing"); got != 0 {
 		t.Fatalf("getUint16 missing key = %d, want 0", got)
+	}
+	if got := getUint32(m, "int64"); got != 65535 {
+		t.Fatalf("getUint32 = %d, want 65535", got)
 	}
 }
 
