@@ -118,7 +118,7 @@ import (
         "encoding/json"
         "errors"
         "fmt"
-        "net"
+        "net/netip"
         "strconv"
         "strings"
 
@@ -168,7 +168,6 @@ type RRJSON struct {
         Data  map[string]any `json:"data"`
 }
 
-// Marshal converts *dns.Msg -&gt; JSON bytes using the explicit schema.
 func (m *Msg) MarshalJSON() ([]byte, error) <span class="cov8" title="1">{
         if m == nil </span><span class="cov0" title="0">{
                 return []byte("null"), nil
@@ -186,17 +185,10 @@ func (m *Msg) MarshalJSON() ([]byte, error) <span class="cov8" title="1">{
                 })
         }</span>
         // Sections
-        <span class="cov8" title="1">var err error
-        if j.Answer, err = rrsToJSON(m.Answer); err != nil </span><span class="cov0" title="0">{
-                return nil, err
-        }</span>
-        <span class="cov8" title="1">if j.Ns, err = rrsToJSON(m.Ns); err != nil </span><span class="cov0" title="0">{
-                return nil, err
-        }</span>
-        <span class="cov8" title="1">if j.Extra, err = rrsToJSON(m.Extra); err != nil </span><span class="cov0" title="0">{
-                return nil, err
-        }</span>
-        <span class="cov8" title="1">return json.Marshal(j)</span>
+        <span class="cov8" title="1">j.Answer = rrsToJSON(m.Answer)
+        j.Ns = rrsToJSON(m.Ns)
+        j.Extra = rrsToJSON(m.Extra)
+        return json.Marshal(j)</span>
 }
 
 func (msg *Msg) UnmarshalJSON(data []byte) error <span class="cov8" title="1">{
@@ -260,8 +252,7 @@ func hdrToJSON(h dns.MsgHdr) MsgHdr <span class="cov8" title="1">{
         }
 }</span>
 
-func hdrFromJSON(j MsgHdr) dns.MsgHdr <span class="cov8" title="1">{
-        mh := dns.MsgHdr{}
+func hdrFromJSON(j MsgHdr) (mh dns.MsgHdr) <span class="cov8" title="1">{
         mh.Response = j.QR
         mh.Opcode = stringToOpcode(j.Opcode)
         mh.Authoritative = j.AA
@@ -272,34 +263,28 @@ func hdrFromJSON(j MsgHdr) dns.MsgHdr <span class="cov8" title="1">{
         mh.AuthenticatedData = j.AD
         mh.CheckingDisabled = j.CD
         mh.Rcode = stringToRcode(j.Rcode)
-        return mh
+        return
 }</span>
 
-func rrsToJSON(rrs []dns.RR) ([]RRJSON, error) <span class="cov8" title="1">{
-        out := make([]RRJSON, 0, len(rrs))
+func rrsToJSON(rrs []dns.RR) (out []RRJSON) <span class="cov8" title="1">{
         for _, rr := range rrs </span><span class="cov0" title="0">{
-                j, err := rrToJSON(rr)
-                if err != nil </span><span class="cov0" title="0">{
-                        return nil, err
-                }</span>
-                <span class="cov0" title="0">out = append(out, j)</span>
-        }
-        <span class="cov8" title="1">return out, nil</span>
+                out = append(out, rrToJSON(rr))
+        }</span>
+        <span class="cov8" title="1">return</span>
 }
 
-func rrsFromJSON(rrjs []RRJSON) ([]dns.RR, error) <span class="cov8" title="1">{
-        out := make([]dns.RR, 0, len(rrjs))
+func rrsFromJSON(rrjs []RRJSON) (out []dns.RR, err error) <span class="cov8" title="1">{
         for _, j := range rrjs </span><span class="cov0" title="0">{
-                rr, err := rrFromJSON(j)
-                if err != nil </span><span class="cov0" title="0">{
-                        return nil, err
+                if rr, e := rrFromJSON(j); e == nil </span><span class="cov0" title="0">{
+                        out = append(out, rr)
+                }</span> else<span class="cov0" title="0"> {
+                        err = errors.Join(err, e)
                 }</span>
-                <span class="cov0" title="0">out = append(out, rr)</span>
         }
-        <span class="cov8" title="1">return out, nil</span>
+        <span class="cov8" title="1">return</span>
 }
 
-func rrToJSON(rr dns.RR) (RRJSON, error) <span class="cov0" title="0">{
+func rrToJSON(rr dns.RR) RRJSON <span class="cov0" title="0">{
         h := rr.Header()
         j := RRJSON{
                 Name:  h.Name,
@@ -377,7 +362,7 @@ func rrToJSON(rr dns.RR) (RRJSON, error) <span class="cov0" title="0">{
                 // Fallback to presentation for unknown types to maintain coverage without wire format.
                 j.Data["raw"] = rr.String()</span>
         }
-        <span class="cov0" title="0">return j, nil</span>
+        <span class="cov0" title="0">return j</span>
 }
 
 func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov0" title="0">{
@@ -387,22 +372,25 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov0" title="0">{
                         // Choose concrete by type
                         switch typeCode </span>{
                         case dns.TypeA:<span class="cov0" title="0">
-                                ip := net.ParseIP(getString(j.Data, "a"))
-                                if ip == nil || ip.To4() == nil </span><span class="cov0" title="0">{
-                                        return nil, fmt.Errorf("A.a must be IPv4")
-                                }</span>
-                                <span class="cov0" title="0">r := &amp;dns.A{Hdr: rrHdr(j, typeCode, classCode)}
-                                r.A = ip.To4()
-                                return r, nil</span>
+                                var ip netip.Addr
+                                if ip, err = netip.ParseAddr(getString(j.Data, "a")); err == nil </span><span class="cov0" title="0">{
+                                        if ip.Is4() </span><span class="cov0" title="0">{
+                                                rr = &amp;dns.A{
+                                                        Hdr: rrHdr(j, typeCode, classCode),
+                                                        A:   ip.AsSlice(),
+                                                }
+                                        }</span>
+                                }
                         case dns.TypeAAAA:<span class="cov0" title="0">
-                                ip := net.ParseIP(getString(j.Data, "aaaa"))
-                                if ip == nil || ip.To16() == nil </span><span class="cov0" title="0">{
-                                        return nil, fmt.Errorf("AAAA.aaaa must be IPv6")
-                                }</span>
-                                <span class="cov0" title="0">rr = &amp;dns.AAAA{
-                                        Hdr:  rrHdr(j, typeCode, classCode),
-                                        AAAA: ip.To16(),
-                                }</span>
+                                var ip netip.Addr
+                                if ip, err = netip.ParseAddr(getString(j.Data, "aaaa")); err == nil </span><span class="cov0" title="0">{
+                                        if ip.Is6() </span><span class="cov0" title="0">{
+                                                rr = &amp;dns.AAAA{
+                                                        Hdr:  rrHdr(j, typeCode, classCode),
+                                                        AAAA: ip.AsSlice(),
+                                                }
+                                        }</span>
+                                }
                         case dns.TypeCNAME:<span class="cov0" title="0">
                                 rr = &amp;dns.CNAME{
                                         Hdr:    rrHdr(j, typeCode, classCode),
