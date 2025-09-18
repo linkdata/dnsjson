@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (59.4%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (59.5%)</option>
 				
 				</select>
 			</div>
@@ -182,27 +182,27 @@ type RRJSON struct {
         Data  map[string]any `json:"data"`
 }
 
-func (m *Msg) MarshalJSON() ([]byte, error) <span class="cov8" title="1">{
-        if m == nil </span><span class="cov0" title="0">{
-                return []byte("null"), nil
-        }</span>
-        <span class="cov8" title="1">j := MessageJSON{
-                ID:     m.Id,
-                MsgHdr: hdrToJSON(m.MsgHdr),
+func (m *Msg) MarshalJSON() (b []byte, err error) <span class="cov8" title="1">{
+        b = []byte("null")
+        if m != nil </span><span class="cov8" title="1">{
+                j := MessageJSON{
+                        ID:     m.Id,
+                        MsgHdr: hdrToJSON(m.MsgHdr),
+                        Answer: rrsToJSON(m.Answer),
+                        Ns:     rrsToJSON(m.Ns),
+                        Extra:  rrsToJSON(m.Extra),
+                }
+                // Questions
+                for _, q := range m.Question </span><span class="cov8" title="1">{
+                        j.Question = append(j.Question, Question{
+                                Name:   q.Name,
+                                Qtype:  typeToString(q.Qtype),
+                                Qclass: classToString(q.Qclass),
+                        })
+                }</span>
+                <span class="cov8" title="1">b, err = json.Marshal(j)</span>
         }
-        // Questions
-        for _, q := range m.Question </span><span class="cov8" title="1">{
-                j.Question = append(j.Question, Question{
-                        Name:   q.Name,
-                        Qtype:  typeToString(q.Qtype),
-                        Qclass: classToString(q.Qclass),
-                })
-        }</span>
-        // Sections
-        <span class="cov8" title="1">j.Answer = rrsToJSON(m.Answer)
-        j.Ns = rrsToJSON(m.Ns)
-        j.Extra = rrsToJSON(m.Extra)
-        return json.Marshal(j)</span>
+        <span class="cov8" title="1">return</span>
 }
 
 func (msg *Msg) UnmarshalJSON(data []byte) error <span class="cov8" title="1">{
