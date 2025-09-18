@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (30.3%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (49.5%)</option>
 				
 				</select>
 			</div>
@@ -274,10 +274,10 @@ func rrsToJSON(rrs []dns.RR) (out []RRJSON) <span class="cov8" title="1">{
 }
 
 func rrsFromJSON(rrjs []RRJSON) (out []dns.RR, err error) <span class="cov8" title="1">{
-        for _, j := range rrjs </span><span class="cov0" title="0">{
-                if rr, e := rrFromJSON(j); e == nil </span><span class="cov0" title="0">{
+        for _, j := range rrjs </span><span class="cov8" title="1">{
+                if rr, e := rrFromJSON(j); e == nil </span><span class="cov8" title="1">{
                         out = append(out, rr)
-                }</span> else<span class="cov0" title="0"> {
+                }</span> else<span class="cov8" title="1"> {
                         err = errors.Join(err, e)
                 }</span>
         }
@@ -365,16 +365,16 @@ func rrToJSON(rr dns.RR) RRJSON <span class="cov0" title="0">{
         <span class="cov0" title="0">return j</span>
 }
 
-func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov0" title="0">{
+func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
         var typeCode, classCode uint16
-        if typeCode, err = stringToType(j.Type); err == nil </span><span class="cov0" title="0">{
-                if classCode, err = stringToClass(j.Class); err == nil </span><span class="cov0" title="0">{
+        if typeCode, err = stringToType(j.Type); err == nil </span><span class="cov8" title="1">{
+                if classCode, err = stringToClass(j.Class); err == nil </span><span class="cov8" title="1">{
                         // Choose concrete by type
                         switch typeCode </span>{
-                        case dns.TypeA:<span class="cov0" title="0">
+                        case dns.TypeA:<span class="cov8" title="1">
                                 var ip netip.Addr
-                                if ip, err = netip.ParseAddr(getString(j.Data, "a")); err == nil </span><span class="cov0" title="0">{
-                                        if ip.Is4() </span><span class="cov0" title="0">{
+                                if ip, err = netip.ParseAddr(getString(j.Data, "a")); err == nil </span><span class="cov8" title="1">{
+                                        if ip.Is4() </span><span class="cov8" title="1">{
                                                 rr = &amp;dns.A{
                                                         Hdr: rrHdr(j, typeCode, classCode),
                                                         A:   ip.AsSlice(),
@@ -496,14 +496,14 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov0" title="0">{
                                         MatchingType: getUint8(j.Data, "matching_type"),
                                         Certificate:  getString(j.Data, "cert_data"),
                                 }</span>
-                        default:<span class="cov0" title="0">
+                        default:<span class="cov8" title="1">
                                 // Best-effort fallback using presentation format stored in data.raw
                                 raw := getString(j.Data, "raw")
                                 if raw == "" </span><span class="cov0" title="0">{
                                         // try to synthesize: "Name TTL Class Type &lt;empty&gt;"
                                         raw = fmt.Sprintf("%s %d %s %s", j.Name, j.TTL, j.Class, j.Type)
                                 }</span>
-                                <span class="cov0" title="0">if rr, err = dns.NewRR(raw); err == nil </span><span class="cov0" title="0">{
+                                <span class="cov8" title="1">if rr, err = dns.NewRR(raw); err == nil </span><span class="cov8" title="1">{
                                         // NewRR does not preserve TTL/class/name from header in raw string if omitted; ensure header set
                                         h := rr.Header()
                                         h.Name, h.Class, h.Rrtype, h.Ttl = j.Name, classCode, typeCode, j.TTL
@@ -515,10 +515,10 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov0" title="0">{
                         }
                 }
         }
-        <span class="cov0" title="0">return</span>
+        <span class="cov8" title="1">return</span>
 }
 
-func rrHdr(j RRJSON, t uint16, c uint16) dns.RR_Header <span class="cov0" title="0">{
+func rrHdr(j RRJSON, t uint16, c uint16) dns.RR_Header <span class="cov8" title="1">{
         return dns.RR_Header{Name: j.Name, Rrtype: t, Class: c, Ttl: j.TTL}
 }</span>
 
@@ -534,11 +534,11 @@ func typeToString(t uint16) (s string) <span class="cov8" title="1">{
 
 func stringToType(s string) (typ uint16, err error) <span class="cov8" title="1">{
         var ok bool
-        if typ, ok = dns.StringToType[strings.ToUpper(s)]; !ok </span><span class="cov0" title="0">{
+        if typ, ok = dns.StringToType[strings.ToUpper(s)]; !ok </span><span class="cov8" title="1">{
                 var n uint64
-                if n, err = strconv.ParseUint(s, 10, 16); err == nil </span><span class="cov0" title="0">{
+                if n, err = strconv.ParseUint(s, 10, 16); err == nil </span><span class="cov8" title="1">{
                         typ = uint16(n)
-                }</span> else<span class="cov0" title="0"> {
+                }</span> else<span class="cov8" title="1"> {
                         err = fmt.Errorf("unknown type %q", s)
                 }</span>
         }
@@ -584,13 +584,13 @@ func stringToRcode(s string) (rcode int) <span class="cov8" title="1">{
 
 // --- small JSON helpers ---
 
-func getString(m map[string]any, key string) (s string) <span class="cov0" title="0">{
-        if m != nil </span><span class="cov0" title="0">{
-                if v, ok := m[key]; ok </span><span class="cov0" title="0">{
+func getString(m map[string]any, key string) (s string) <span class="cov8" title="1">{
+        if m != nil </span><span class="cov8" title="1">{
+                if v, ok := m[key]; ok </span><span class="cov8" title="1">{
                         s, _ = v.(string)
                 }</span>
         }
-        <span class="cov0" title="0">return</span>
+        <span class="cov8" title="1">return</span>
 }
 
 func getUint8(m map[string]any, key string) uint8 <span class="cov0" title="0">{
@@ -623,21 +623,21 @@ func getInt(m map[string]any, key string) (n int64) <span class="cov0" title="0"
         <span class="cov0" title="0">return</span>
 }
 
-func getStringSlice(m map[string]any, key string) (out []string, err error) <span class="cov0" title="0">{
-        if v, ok := m[key]; ok </span><span class="cov0" title="0">{
+func getStringSlice(m map[string]any, key string) (out []string, err error) <span class="cov8" title="1">{
+        if v, ok := m[key]; ok </span><span class="cov8" title="1">{
                 a, ok := v.([]any)
-                if !ok </span><span class="cov0" title="0">{
+                if !ok </span><span class="cov8" title="1">{
                         return nil, fmt.Errorf("%s must be array of strings", key)
                 }</span>
-                <span class="cov0" title="0">for _, it := range a </span><span class="cov0" title="0">{
+                <span class="cov8" title="1">for _, it := range a </span><span class="cov8" title="1">{
                         s, ok := it.(string)
-                        if !ok </span><span class="cov0" title="0">{
+                        if !ok </span><span class="cov8" title="1">{
                                 return nil, fmt.Errorf("%s must be array of strings", key)
                         }</span>
-                        <span class="cov0" title="0">out = append(out, s)</span>
+                        <span class="cov8" title="1">out = append(out, s)</span>
                 }
         }
-        <span class="cov0" title="0">return</span>
+        <span class="cov8" title="1">return</span>
 }
 </pre>
 		
