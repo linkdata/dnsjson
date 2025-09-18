@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (59.5%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (62.7%)</option>
 				
 				</select>
 			</div>
@@ -205,48 +205,37 @@ func (m *Msg) MarshalJSON() (b []byte, err error) <span class="cov8" title="1">{
         <span class="cov8" title="1">return</span>
 }
 
-func (msg *Msg) UnmarshalJSON(data []byte) error <span class="cov8" title="1">{
-        if len(data) == 0 </span><span class="cov0" title="0">{
-                return ErrEmptyInput
-        }</span>
-        <span class="cov8" title="1">var raw json.RawMessage
-        if err := json.Unmarshal(data, &amp;raw); err != nil </span><span class="cov0" title="0">{
-                return wrapError(ErrInvalidJSON, err)
-        }</span>
-        <span class="cov8" title="1">if string(raw) == "null" </span><span class="cov0" title="0">{
-                return nil
-        }</span>
-        <span class="cov8" title="1">var j MessageJSON
-        if err := json.Unmarshal(raw, &amp;j); err != nil </span><span class="cov0" title="0">{
-                return wrapError(ErrInvalidMessage, err)
-        }</span>
-
-        <span class="cov8" title="1">msg.Id = j.ID
-        msg.MsgHdr = hdrFromJSON(j.MsgHdr)
-        // Questions
-        for _, qj := range j.Question </span><span class="cov8" title="1">{
-                qt, err := stringToType(qj.Qtype)
-                if err != nil </span><span class="cov0" title="0">{
-                        return wrapError(ErrQuestionQType, err)
-                }</span>
-                <span class="cov8" title="1">qc, err := stringToClass(qj.Qclass)
-                if err != nil </span><span class="cov0" title="0">{
-                        return wrapError(ErrQuestionQClass, err)
-                }</span>
-                <span class="cov8" title="1">msg.Question = append(msg.Question, dns.Question{Name: qj.Name, Qtype: qt, Qclass: qc})</span>
+func (msg *Msg) UnmarshalJSON(data []byte) (err error) <span class="cov8" title="1">{
+        err = ErrEmptyInput
+        if len(data) &gt; 0 </span><span class="cov8" title="1">{
+                var raw json.RawMessage
+                if err = wrapError(ErrInvalidJSON, json.Unmarshal(data, &amp;raw)); err == nil </span><span class="cov8" title="1">{
+                        if string(raw) != "null" </span><span class="cov8" title="1">{
+                                var j MessageJSON
+                                if err = wrapError(ErrInvalidMessage, json.Unmarshal(raw, &amp;j)); err == nil </span><span class="cov8" title="1">{
+                                        msg.Id = j.ID
+                                        msg.MsgHdr = hdrFromJSON(j.MsgHdr)
+                                        // Questions
+                                        for _, qj := range j.Question </span><span class="cov8" title="1">{
+                                                qt, e := stringToType(qj.Qtype)
+                                                err = errors.Join(err, wrapError(ErrQuestionQType, e))
+                                                qc, e := stringToClass(qj.Qclass)
+                                                err = errors.Join(err, wrapError(ErrQuestionQClass, e))
+                                                msg.Question = append(msg.Question, dns.Question{Name: qj.Name, Qtype: qt, Qclass: qc})
+                                        }</span>
+                                        // Sections
+                                        <span class="cov8" title="1">var e error
+                                        msg.Answer, e = rrsFromJSON(j.Answer)
+                                        err = errors.Join(err, wrapError(ErrAnswerSection, e))
+                                        msg.Ns, e = rrsFromJSON(j.Ns)
+                                        err = errors.Join(err, wrapError(ErrNsSection, e))
+                                        msg.Extra, e = rrsFromJSON(j.Extra)
+                                        err = errors.Join(err, wrapError(ErrExtraSection, e))</span>
+                                }
+                        }
+                }
         }
-        // Sections
-        <span class="cov8" title="1">var err error
-        if msg.Answer, err = rrsFromJSON(j.Answer); err != nil </span><span class="cov0" title="0">{
-                return wrapError(ErrAnswerSection, err)
-        }</span>
-        <span class="cov8" title="1">if msg.Ns, err = rrsFromJSON(j.Ns); err != nil </span><span class="cov0" title="0">{
-                return wrapError(ErrNsSection, err)
-        }</span>
-        <span class="cov8" title="1">if msg.Extra, err = rrsFromJSON(j.Extra); err != nil </span><span class="cov0" title="0">{
-                return wrapError(ErrExtraSection, err)
-        }</span>
-        <span class="cov8" title="1">return nil</span>
+        <span class="cov8" title="1">return</span>
 }
 
 // --- helpers ---
@@ -659,11 +648,11 @@ type wrappedError struct {
         err      error
 }
 
-func wrapError(sentinel, err error) error <span class="cov8" title="1">{
-        if err == nil </span><span class="cov8" title="1">{
-                return sentinel
+func wrapError(sentinel, err error) (out error) <span class="cov8" title="1">{
+        if err != nil </span><span class="cov8" title="1">{
+                out = &amp;wrappedError{sentinel: sentinel, err: err}
         }</span>
-        <span class="cov8" title="1">return &amp;wrappedError{sentinel: sentinel, err: err}</span>
+        <span class="cov8" title="1">return</span>
 }
 
 func (w *wrappedError) Error() string <span class="cov0" title="0">{
