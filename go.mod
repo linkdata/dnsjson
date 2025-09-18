@@ -1,6 +1,6 @@
 module github.com/linkdata/dnsjson
 
-go 1.25.1
+go 1.24
 
 require github.com/miekg/dns v1.1.68
 
