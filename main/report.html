@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (58.2%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (59.4%)</option>
 				
 				</select>
 			</div>
@@ -130,6 +130,20 @@ type Msg dns.Msg
 var _ json.Marshaler = &amp;Msg{}
 var _ json.Unmarshaler = &amp;Msg{}
 
+var (
+        ErrEmptyInput         = errors.New("dnsjson: empty input")
+        ErrInvalidJSON        = errors.New("dnsjson: invalid JSON")
+        ErrInvalidMessage     = errors.New("dnsjson: invalid message")
+        ErrQuestionQType      = errors.New("dnsjson: question qtype")
+        ErrQuestionQClass     = errors.New("dnsjson: question qclass")
+        ErrAnswerSection      = errors.New("answer")
+        ErrNsSection          = errors.New("ns")
+        ErrExtraSection       = errors.New("extra")
+        ErrUnknownType        = errors.New("unknown type")
+        ErrUnknownClass       = errors.New("unknown class")
+        ErrInvalidStringSlice = errors.New("invalid string slice")
+)
+
 // MessageJSON is the top-level JSON shape for dns.Msg.
 type MessageJSON struct {
         ID       uint16     `json:"id"`
@@ -193,18 +207,18 @@ func (m *Msg) MarshalJSON() ([]byte, error) <span class="cov8" title="1">{
 
 func (msg *Msg) UnmarshalJSON(data []byte) error <span class="cov8" title="1">{
         if len(data) == 0 </span><span class="cov0" title="0">{
-                return errors.New("dnsjson: empty input")
+                return ErrEmptyInput
         }</span>
         <span class="cov8" title="1">var raw json.RawMessage
         if err := json.Unmarshal(data, &amp;raw); err != nil </span><span class="cov0" title="0">{
-                return fmt.Errorf("dnsjson: invalid JSON: %w", err)
+                return wrapError(ErrInvalidJSON, err)
         }</span>
         <span class="cov8" title="1">if string(raw) == "null" </span><span class="cov0" title="0">{
                 return nil
         }</span>
         <span class="cov8" title="1">var j MessageJSON
         if err := json.Unmarshal(raw, &amp;j); err != nil </span><span class="cov0" title="0">{
-                return fmt.Errorf("dnsjson: invalid message: %w", err)
+                return wrapError(ErrInvalidMessage, err)
         }</span>
 
         <span class="cov8" title="1">msg.Id = j.ID
@@ -213,24 +227,24 @@ func (msg *Msg) UnmarshalJSON(data []byte) error <span class="cov8" title="1">{
         for _, qj := range j.Question </span><span class="cov8" title="1">{
                 qt, err := stringToType(qj.Qtype)
                 if err != nil </span><span class="cov0" title="0">{
-                        return fmt.Errorf("dnsjson: question qtype: %w", err)
+                        return wrapError(ErrQuestionQType, err)
                 }</span>
                 <span class="cov8" title="1">qc, err := stringToClass(qj.Qclass)
                 if err != nil </span><span class="cov0" title="0">{
-                        return fmt.Errorf("dnsjson: question qclass: %w", err)
+                        return wrapError(ErrQuestionQClass, err)
                 }</span>
                 <span class="cov8" title="1">msg.Question = append(msg.Question, dns.Question{Name: qj.Name, Qtype: qt, Qclass: qc})</span>
         }
         // Sections
         <span class="cov8" title="1">var err error
         if msg.Answer, err = rrsFromJSON(j.Answer); err != nil </span><span class="cov0" title="0">{
-                return fmt.Errorf("answer: %w", err)
+                return wrapError(ErrAnswerSection, err)
         }</span>
         <span class="cov8" title="1">if msg.Ns, err = rrsFromJSON(j.Ns); err != nil </span><span class="cov0" title="0">{
-                return fmt.Errorf("ns: %w", err)
+                return wrapError(ErrNsSection, err)
         }</span>
         <span class="cov8" title="1">if msg.Extra, err = rrsFromJSON(j.Extra); err != nil </span><span class="cov0" title="0">{
-                return fmt.Errorf("extra: %w", err)
+                return wrapError(ErrExtraSection, err)
         }</span>
         <span class="cov8" title="1">return nil</span>
 }
@@ -539,7 +553,7 @@ func stringToType(s string) (typ uint16, err error) <span class="cov8" title="1"
                 if n, err = strconv.ParseUint(s, 10, 16); err == nil </span><span class="cov8" title="1">{
                         typ = uint16(n)
                 }</span> else<span class="cov8" title="1"> {
-                        err = fmt.Errorf("unknown type %q", s)
+                        err = &amp;unknownTypeError{value: s}
                 }</span>
         }
         <span class="cov8" title="1">return</span>
@@ -560,7 +574,7 @@ func stringToClass(s string) (cls uint16, err error) <span class="cov8" title="1
                 if n, err = strconv.ParseUint(s, 10, 16); err == nil </span><span class="cov8" title="1">{
                         cls = uint16(n)
                 }</span> else<span class="cov8" title="1"> {
-                        err = fmt.Errorf("unknown class %q", s)
+                        err = &amp;unknownClassError{value: s}
                 }</span>
         }
         <span class="cov8" title="1">return</span>
@@ -627,18 +641,84 @@ func getStringSlice(m map[string]any, key string) (out []string, err error) <spa
         if v, ok := m[key]; ok </span><span class="cov8" title="1">{
                 a, ok := v.([]any)
                 if !ok </span><span class="cov8" title="1">{
-                        return nil, fmt.Errorf("%s must be array of strings", key)
+                        return nil, &amp;stringSliceError{key: key}
                 }</span>
                 <span class="cov8" title="1">for _, it := range a </span><span class="cov8" title="1">{
                         s, ok := it.(string)
                         if !ok </span><span class="cov8" title="1">{
-                                return nil, fmt.Errorf("%s must be array of strings", key)
+                                return nil, &amp;stringSliceError{key: key}
                         }</span>
                         <span class="cov8" title="1">out = append(out, s)</span>
                 }
         }
         <span class="cov8" title="1">return</span>
 }
+
+type wrappedError struct {
+        sentinel error
+        err      error
+}
+
+func wrapError(sentinel, err error) error <span class="cov8" title="1">{
+        if err == nil </span><span class="cov8" title="1">{
+                return sentinel
+        }</span>
+        <span class="cov8" title="1">return &amp;wrappedError{sentinel: sentinel, err: err}</span>
+}
+
+func (w *wrappedError) Error() string <span class="cov0" title="0">{
+        if w.err == nil </span><span class="cov0" title="0">{
+                return w.sentinel.Error()
+        }</span>
+        <span class="cov0" title="0">return w.sentinel.Error() + ": " + w.err.Error()</span>
+}
+
+func (w *wrappedError) Unwrap() error <span class="cov8" title="1">{
+        return w.err
+}</span>
+
+func (w *wrappedError) Is(target error) bool <span class="cov8" title="1">{
+        if target == w.sentinel </span><span class="cov8" title="1">{
+                return true
+        }</span>
+        <span class="cov0" title="0">return w.err != nil &amp;&amp; errors.Is(w.err, target)</span>
+}
+
+type unknownTypeError struct {
+        value string
+}
+
+func (e *unknownTypeError) Error() string <span class="cov8" title="1">{
+        return "unknown type " + strconv.Quote(e.value)
+}</span>
+
+func (e *unknownTypeError) Is(target error) bool <span class="cov8" title="1">{
+        return target == ErrUnknownType
+}</span>
+
+type unknownClassError struct {
+        value string
+}
+
+func (e *unknownClassError) Error() string <span class="cov8" title="1">{
+        return "unknown class " + strconv.Quote(e.value)
+}</span>
+
+func (e *unknownClassError) Is(target error) bool <span class="cov8" title="1">{
+        return target == ErrUnknownClass
+}</span>
+
+type stringSliceError struct {
+        key string
+}
+
+func (e *stringSliceError) Error() string <span class="cov8" title="1">{
+        return e.key + " must be array of strings"
+}</span>
+
+func (e *stringSliceError) Is(target error) bool <span class="cov8" title="1">{
+        return target == ErrInvalidStringSlice
+}</span>
 </pre>
 		
 		</div>
