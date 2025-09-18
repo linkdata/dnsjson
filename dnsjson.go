@@ -111,27 +111,27 @@ type RRJSON struct {
 	Data  map[string]any `json:"data"`
 }
 
-func (m *Msg) MarshalJSON() ([]byte, error) {
-	if m == nil {
-		return []byte("null"), nil
+func (m *Msg) MarshalJSON() (b []byte, err error) {
+	b = []byte("null")
+	if m != nil {
+		j := MessageJSON{
+			ID:     m.Id,
+			MsgHdr: hdrToJSON(m.MsgHdr),
+			Answer: rrsToJSON(m.Answer),
+			Ns:     rrsToJSON(m.Ns),
+			Extra:  rrsToJSON(m.Extra),
+		}
+		// Questions
+		for _, q := range m.Question {
+			j.Question = append(j.Question, Question{
+				Name:   q.Name,
+				Qtype:  typeToString(q.Qtype),
+				Qclass: classToString(q.Qclass),
+			})
+		}
+		b, err = json.Marshal(j)
 	}
-	j := MessageJSON{
-		ID:     m.Id,
-		MsgHdr: hdrToJSON(m.MsgHdr),
-	}
-	// Questions
-	for _, q := range m.Question {
-		j.Question = append(j.Question, Question{
-			Name:   q.Name,
-			Qtype:  typeToString(q.Qtype),
-			Qclass: classToString(q.Qclass),
-		})
-	}
-	// Sections
-	j.Answer = rrsToJSON(m.Answer)
-	j.Ns = rrsToJSON(m.Ns)
-	j.Extra = rrsToJSON(m.Extra)
-	return json.Marshal(j)
+	return
 }
 
 func (msg *Msg) UnmarshalJSON(data []byte) error {
