@@ -465,66 +465,73 @@ func rrHdr(j RRJSON, t uint16, c uint16) dns.RR_Header {
 
 // --- mapping helpers ---
 
-func typeToString(t uint16) string {
-	if s, ok := dns.TypeToString[t]; ok {
-		return s
+func typeToString(t uint16) (s string) {
+	var ok bool
+	if s, ok = dns.TypeToString[t]; !ok {
+		s = strconv.FormatUint(uint64(t), 10)
 	}
-	return strconv.FormatUint(uint64(t), 10)
+	return
 }
-func classToString(c uint16) string {
-	if s, ok := dns.ClassToString[c]; ok {
-		return s
-	}
-	return strconv.FormatUint(uint64(c), 10)
-}
-func stringToType(s string) (uint16, error) {
-	if v, ok := dns.StringToType[strings.ToUpper(s)]; ok {
-		return v, nil
-	}
-	// numeric?
-	if n, err := strconv.ParseUint(s, 10, 16); err == nil {
-		return uint16(n), nil
-	}
-	return 0, fmt.Errorf("unknown type %q", s)
-}
-func stringToClass(s string) (uint16, error) {
-	if v, ok := dns.StringToClass[strings.ToUpper(s)]; ok {
-		return v, nil
-	}
-	if n, err := strconv.ParseUint(s, 10, 16); err == nil {
-		return uint16(n), nil
-	}
-	return 0, fmt.Errorf("unknown class %q", s)
-}
-func stringToOpcode(s string) int {
-	for k, v := range dns.OpcodeToString {
-		if v == strings.ToUpper(s) {
-			return k
+
+func stringToType(s string) (typ uint16, err error) {
+	var ok bool
+	if typ, ok = dns.StringToType[strings.ToUpper(s)]; !ok {
+		var n uint64
+		if n, err = strconv.ParseUint(s, 10, 16); err == nil {
+			typ = uint16(n)
+		} else {
+			err = fmt.Errorf("unknown type %q", s)
 		}
 	}
-	return dns.OpcodeQuery
+	return
 }
-func stringToRcode(s string) int {
-	for k, v := range dns.RcodeToString {
-		if v == strings.ToUpper(s) {
-			return k
+
+func classToString(c uint16) (s string) {
+	var ok bool
+	if s, ok = dns.ClassToString[c]; !ok {
+		s = strconv.FormatUint(uint64(c), 10)
+	}
+	return
+}
+
+func stringToClass(s string) (cls uint16, err error) {
+	var ok bool
+	if cls, ok = dns.StringToClass[strings.ToUpper(s)]; !ok {
+		var n uint64
+		if n, err = strconv.ParseUint(s, 10, 16); err == nil {
+			cls = uint16(n)
+		} else {
+			err = fmt.Errorf("unknown class %q", s)
 		}
 	}
-	return dns.RcodeSuccess
+	return
+}
+
+func stringToOpcode(s string) (opcode int) {
+	opcode = dns.OpcodeQuery
+	if op, ok := dns.StringToOpcode[strings.ToUpper(s)]; ok {
+		opcode = op
+	}
+	return
+}
+
+func stringToRcode(s string) (rcode int) {
+	rcode = dns.RcodeSuccess
+	if rc, ok := dns.StringToRcode[strings.ToUpper(s)]; ok {
+		rcode = rc
+	}
+	return
 }
 
 // --- small JSON helpers ---
 
-func getString(m map[string]any, key string) string {
-	if m == nil {
-		return ""
-	}
-	if v, ok := m[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
+func getString(m map[string]any, key string) (s string) {
+	if m != nil {
+		if v, ok := m[key]; ok {
+			s, _ = v.(string)
 		}
 	}
-	return ""
+	return
 }
 
 func getUint8(m map[string]any, key string) uint8 {
@@ -537,47 +544,39 @@ func getUint32(m map[string]any, key string) uint32 {
 	return uint32(getInt(m, key)) // #nosec G115
 }
 
-func getInt(m map[string]any, key string) int64 {
-	if m == nil {
-		return 0
+func getInt(m map[string]any, key string) (n int64) {
+	if m != nil {
+		if v, ok := m[key]; ok {
+			switch t := v.(type) {
+			case float64:
+				n = int64(t)
+			case int:
+				n = int64(t)
+			case int64:
+				n = t
+			case json.Number:
+				n, _ = t.Int64()
+			case string:
+				n, _ = strconv.ParseInt(t, 10, 64)
+			}
+		}
 	}
-	v, ok := m[key]
-	if !ok {
-		return 0
-	}
-	switch t := v.(type) {
-	case float64:
-		return int64(t)
-	case int:
-		return int64(t)
-	case int64:
-		return t
-	case json.Number:
-		i, _ := t.Int64()
-		return i
-	case string:
-		i, _ := strconv.ParseInt(t, 10, 64)
-		return i
-	default:
-		return 0
-	}
+	return
 }
-func getStringSlice(m map[string]any, key string) ([]string, error) {
-	v, ok := m[key]
-	if !ok {
-		return nil, nil
-	}
-	a, ok := v.([]any)
-	if !ok {
-		return nil, fmt.Errorf("%s must be array of strings", key)
-	}
-	out := make([]string, 0, len(a))
-	for _, it := range a {
-		s, ok := it.(string)
+
+func getStringSlice(m map[string]any, key string) (out []string, err error) {
+	if v, ok := m[key]; ok {
+		a, ok := v.([]any)
 		if !ok {
 			return nil, fmt.Errorf("%s must be array of strings", key)
 		}
-		out = append(out, s)
+		for _, it := range a {
+			s, ok := it.(string)
+			if !ok {
+				return nil, fmt.Errorf("%s must be array of strings", key)
+			}
+			out = append(out, s)
+		}
 	}
-	return out, nil
+	return
 }
