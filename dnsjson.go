@@ -585,9 +585,6 @@ func wrapError(sentinel, err error) (out error) {
 }
 
 func (w *wrappedError) Error() string {
-	if w.err == nil {
-		return w.sentinel.Error()
-	}
 	return w.sentinel.Error() + ": " + w.err.Error()
 }
 
@@ -596,10 +593,7 @@ func (w *wrappedError) Unwrap() error {
 }
 
 func (w *wrappedError) Is(target error) bool {
-	if target == w.sentinel {
-		return true
-	}
-	return w.err != nil && errors.Is(w.err, target)
+	return target == w.sentinel || errors.Is(w.err, target)
 }
 
 type unknownTypeError struct {

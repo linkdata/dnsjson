@@ -253,6 +253,9 @@ func TestWrapError(t *testing.T) {
 	if !errors.Is(err, ErrInvalidJSON) {
 		t.Fatalf("expected errors.Is to match sentinel: %v", err)
 	}
+	if got := err.Error(); got != "dnsjson: invalid JSON: boom" {
+		t.Errorf("%q != %q", got, "dnsjson: invalid JSON: boom")
+	}
 	if errors.Unwrap(err) != base {
 		t.Fatalf("expected unwrap to yield original error, got %v", errors.Unwrap(err))
 	}
