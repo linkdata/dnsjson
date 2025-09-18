@@ -1,12 +1,4 @@
-[![build](https://github.com/linkdata/dnsjson/actions/workflows/build.yml/badge.svg)](https://github.com/linkdata/dnsjson/actions/workflows/build.yml)
-[![coverage](https://github.com/linkdata/dnsjson/blob/coverage/main/badge.svg)](https://htmlpreview.github.io/?https://github.com/linkdata/dnsjson/blob/coverage/main/report.html)
-[![goreport](https://goreportcard.com/badge/github.com/linkdata/dnsjson)](https://goreportcard.com/report/github.com/linkdata/dnsjson)
-[![Docs](https://godoc.org/github.com/linkdata/dnsjson?status.svg)](https://godoc.org/github.com/linkdata/dnsjson)
-
-# dnsjson
-
-```go
-package main
+package dnsjson_test
 
 import (
 	"encoding/json"
@@ -16,7 +8,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-func main() {
+func Example() {
 	msg := new(dns.Msg)
 	msg.SetQuestion("example.com.", dns.TypeA)
 	msg.Id = 1234
@@ -50,4 +42,3 @@ func main() {
 	// }
 	// example.com.
 }
-```
