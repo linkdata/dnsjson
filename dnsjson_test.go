@@ -677,7 +677,7 @@ func messageFixtures(t *testing.T) map[string]*dns.Msg {
 		&dns.EDNS0_DAU{Code: dns.EDNS0DAU, AlgCode: []uint8{8, 13}},
 		&dns.EDNS0_DHU{Code: dns.EDNS0DHU, AlgCode: []uint8{1, 2}},
 		&dns.EDNS0_N3U{Code: dns.EDNS0N3U, AlgCode: []uint8{1}},
-		&dns.EDNS0_EXPIRE{Code: dns.EDNS0EXPIRE, Expire: 86400},
+		&dns.EDNS0_EXPIRE{Code: dns.EDNS0EXPIRE, Expire: 86400, Empty: true},
 		&dns.EDNS0_LOCAL{Code: dns.EDNS0LOCALSTART + 1, Data: []byte{0xDE, 0xAD, 0xBE, 0xEF}},
 		&dns.EDNS0_TCP_KEEPALIVE{Code: dns.EDNS0TCPKEEPALIVE, Timeout: 10},
 		&dns.EDNS0_PADDING{Padding: []byte{0x00, 0x01, 0x02, 0x03}},
