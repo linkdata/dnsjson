@@ -221,7 +221,14 @@ func TestAnyToUint64(t *testing.T) {
 		{name: "json number", input: json.Number("10"), want: 10},
 		{name: "json number string", input: json.Number("-11"), wantErr: ErrNegativeValue},
 		{name: "string", input: "123", want: 123},
+		{name: "int", input: int(1), want: 1},
+		{name: "int64", input: int64(1), want: 1},
+		{name: "uint8", input: uint8(1), want: 1},
+		{name: "uint16", input: uint16(1), want: 1},
+		{name: "uint32", input: uint32(1), want: 1},
+		{name: "uint64", input: uint64(1), want: 1},
 		{name: "negative int", input: int(-5), wantErr: ErrNegativeValue},
+		{name: "negative int64", input: int64(-5), wantErr: ErrNegativeValue},
 		{name: "invalid type", input: true, wantErr: ErrInvalidNumberType},
 	}
 
