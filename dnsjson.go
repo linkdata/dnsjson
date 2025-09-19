@@ -1,4 +1,4 @@
-// Package dnsjson provides JSON marshalling/unmarshalling helpers for github.com/miekg/dns *dns.Msg
+// Provides JSON marshalling/unmarshalling *dns.Msg
 // using an explicit, human-readable JSON schema (no wire-format fields).
 //
 // Schema overview (stable keys; rdata keys per RR type listed below):
