@@ -433,6 +433,127 @@ func TestStringSliceErrorIs(t *testing.T) {
 	}
 }
 
+func TestStringToOptionCode(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantCode  uint16
+		wantError bool
+	}{
+		{name: "known mnemonic", input: "NSID", wantCode: dns.EDNS0NSID},
+		{name: "case insensitive", input: "subnet", wantCode: dns.EDNS0SUBNET},
+		{name: "alias", input: "tcp_keepalive", wantCode: dns.EDNS0TCPKEEPALIVE},
+		{name: "numeric", input: "65000", wantCode: 65000},
+		{name: "unknown", input: "definitely-unknown", wantError: true},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := stringToOptionCode(tc.input)
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("expected error for %q", tc.input)
+				}
+				var uoe *unknownOptionError
+				if !errors.As(err, &uoe) {
+					t.Fatalf("expected unknownOptionError, got %T", err)
+				}
+				if uoe.Error() != "unknown option code \""+tc.input+"\"" {
+					t.Fatalf("unexpected error string: %q", uoe.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error for %q: %v", tc.input, err)
+			}
+			if got != tc.wantCode {
+				t.Fatalf("stringToOptionCode(%q) = %d, want %d", tc.input, got, tc.wantCode)
+			}
+		})
+	}
+}
+
+func TestOptOptionEntryError(t *testing.T) {
+	err := &optOptionEntryError{index: 3}
+	if got := err.Error(); got != "opt options[3] must be object" {
+		t.Fatalf("unexpected error string: %q", got)
+	}
+	if !errors.Is(err, ErrEDNSOptionEntry) {
+		t.Fatalf("expected errors.Is to match ErrEDNSOptionEntry, got %v", err)
+	}
+}
+
+func TestOptOptionCodeError(t *testing.T) {
+	err := &optOptionCodeError{code: "NSID"}
+	if got := err.Error(); got != "opt option NSID" {
+		t.Fatalf("unexpected error string: %q", got)
+	}
+	if !errors.Is(err, ErrEDNSOption) {
+		t.Fatalf("expected errors.Is to match ErrEDNSOption, got %v", err)
+	}
+
+	inner := errors.New("boom")
+	err = &optOptionCodeError{code: "NSID", err: inner}
+	if got := err.Error(); got != "opt option NSID: boom" {
+		t.Fatalf("unexpected wrapped error string: %q", got)
+	}
+	if !errors.Is(err, ErrEDNSOption) {
+		t.Fatalf("expected errors.Is to match ErrEDNSOption for wrapped error, got %v", err)
+	}
+	if !errors.Is(err, inner) {
+		t.Fatalf("expected errors.Is to match wrapped error, got %v", err)
+	}
+	if errors.Unwrap(err) != inner {
+		t.Fatalf("expected Unwrap to return inner error, got %v", errors.Unwrap(err))
+	}
+}
+
+func TestKeyArrayError(t *testing.T) {
+	err := &keyArrayError{key: "algs"}
+	if got := err.Error(); got != "algs must be array" {
+		t.Fatalf("unexpected error string: %q", got)
+	}
+	if !errors.Is(err, ErrUint8SliceType) {
+		t.Fatalf("expected errors.Is to match ErrUint8SliceType, got %v", err)
+	}
+}
+
+func TestKeyIndexError(t *testing.T) {
+	err := &keyIndexError{key: "algs", index: 1}
+	if got := err.Error(); got != "algs[1]" {
+		t.Fatalf("unexpected error string: %q", got)
+	}
+	if !errors.Is(err, ErrUint8SliceElement) {
+		t.Fatalf("expected errors.Is to match ErrUint8SliceElement, got %v", err)
+	}
+
+	inner := ErrInvalidNumberType
+	err = &keyIndexError{key: "algs", index: 2, err: inner}
+	if got := err.Error(); got != "algs[2]: invalid number type" {
+		t.Fatalf("unexpected wrapped error string: %q", got)
+	}
+	if !errors.Is(err, ErrUint8SliceElement) {
+		t.Fatalf("expected errors.Is to match ErrUint8SliceElement for wrapped error, got %v", err)
+	}
+	if !errors.Is(err, inner) {
+		t.Fatalf("expected errors.Is to match wrapped error, got %v", err)
+	}
+	if errors.Unwrap(err) != inner {
+		t.Fatalf("expected Unwrap to return inner error, got %v", errors.Unwrap(err))
+	}
+}
+
+func TestKeyIndexRangeError(t *testing.T) {
+	err := &keyIndexRangeError{key: "algs", index: 4}
+	if got := err.Error(); got != "algs[4]: value out of range" {
+		t.Fatalf("unexpected error string: %q", got)
+	}
+	if !errors.Is(err, ErrUint8SliceRange) {
+		t.Fatalf("expected errors.Is to match ErrUint8SliceRange, got %v", err)
+	}
+}
+
 const fallbackType = 65280
 
 func TestMsgJSONRoundTrip(t *testing.T) {
