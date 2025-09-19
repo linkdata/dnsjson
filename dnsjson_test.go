@@ -324,6 +324,87 @@ func TestRRFromJSONFallback(t *testing.T) {
 	}
 }
 
+func TestRRFromJSONErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		input RRJSON
+		check func(*testing.T, error)
+	}{
+		{
+			name:  "unknown type",
+			input: RRJSON{Type: "definitely-unknown", Class: "IN"},
+			check: func(t *testing.T, err error) {
+				var ute *unknownTypeError
+				if !errors.As(err, &ute) {
+					t.Fatalf("expected unknownTypeError, got %T", err)
+				}
+			},
+		},
+		{
+			name:  "unknown class",
+			input: RRJSON{Type: "A", Class: "definitely-unknown", Data: map[string]any{"a": "192.0.2.1"}},
+			check: func(t *testing.T, err error) {
+				var uce *unknownClassError
+				if !errors.As(err, &uce) {
+					t.Fatalf("expected unknownClassError, got %T", err)
+				}
+			},
+		},
+		{
+			name:  "invalid ipv4",
+			input: RRJSON{Type: "A", Class: "IN", Data: map[string]any{"a": "not-an-ip"}},
+			check: func(t *testing.T, err error) {
+				if !strings.Contains(err.Error(), "ParseAddr") {
+					t.Fatalf("expected ParseAddr error, got %v", err)
+				}
+			},
+		},
+		{
+			name:  "txt invalid slice",
+			input: RRJSON{Type: "TXT", Class: "IN", Data: map[string]any{"txt": "not-a-slice"}},
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, ErrInvalidStringSlice) {
+					t.Fatalf("expected ErrInvalidStringSlice, got %v", err)
+				}
+			},
+		},
+		{
+			name:  "opt options not array",
+			input: RRJSON{Type: "OPT", Class: "IN", Data: map[string]any{"options": "not-an-array"}},
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, ErrEDNSOptionsNotArray) {
+					t.Fatalf("expected ErrEDNSOptionsNotArray, got %v", err)
+				}
+			},
+		},
+		{
+			name:  "opt option not object",
+			input: RRJSON{Type: "OPT", Class: "IN", Data: map[string]any{"options": []any{"not-an-object"}}},
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, ErrEDNSOptionEntry) {
+					t.Fatalf("expected ErrEDNSOptionEntry, got %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Helper()
+
+			rr, err := rrFromJSON(tc.input)
+			if err == nil {
+				t.Fatalf("expected error, got rr=%v", rr)
+			}
+			if rr != nil {
+				t.Fatalf("expected nil RR on error, got %T", rr)
+			}
+			tc.check(t, err)
+		})
+	}
+}
+
 func TestRRsFromJSONAggregatesErrors(t *testing.T) {
 	valid := RRJSON{
 		Name:  "valid.example.",
@@ -507,6 +588,47 @@ func TestOptOptionCodeError(t *testing.T) {
 	if errors.Unwrap(err) != inner {
 		t.Fatalf("expected Unwrap to return inner error, got %v", errors.Unwrap(err))
 	}
+}
+
+func TestEDNSOptionFromJSONErrors(t *testing.T) {
+	t.Run("missing code", func(t *testing.T) {
+		if opt, err := ednsOptionFromJSON(map[string]any{}); err == nil {
+			t.Fatalf("expected ErrEDNSOptionNoCode, got option=%v", opt)
+		} else if !errors.Is(err, ErrEDNSOptionNoCode) {
+			t.Fatalf("expected ErrEDNSOptionNoCode, got %v", err)
+		}
+	})
+
+	t.Run("unknown code", func(t *testing.T) {
+		if _, err := ednsOptionFromJSON(map[string]any{"code": "definitely-unknown"}); err == nil {
+			t.Fatal("expected error for unknown option code")
+		} else {
+			var uoe *unknownOptionError
+			if !errors.As(err, &uoe) {
+				t.Fatalf("expected unknownOptionError, got %T", err)
+			}
+		}
+	})
+
+	t.Run("invalid subnet payload", func(t *testing.T) {
+		if opt, err := ednsOptionFromJSON(map[string]any{"code": "SUBNET", "address": "not-an-ip"}); err == nil {
+			t.Fatalf("expected error, got option=%v", opt)
+		} else {
+			if !errors.Is(err, ErrEDNSOption) {
+				t.Fatalf("expected errors.Is to match ErrEDNSOption, got %v", err)
+			}
+			var optErr *optOptionCodeError
+			if !errors.As(err, &optErr) {
+				t.Fatalf("expected optOptionCodeError, got %T", err)
+			}
+			if optErr.code != "SUBNET" {
+				t.Fatalf("unexpected option code: %q", optErr.code)
+			}
+			if optErr.err == nil {
+				t.Fatal("expected wrapped error for invalid subnet payload")
+			}
+		}
+	})
 }
 
 func TestKeyArrayError(t *testing.T) {
