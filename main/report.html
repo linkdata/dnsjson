@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (90.7%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (92.4%)</option>
 				
 				</select>
 			</div>
@@ -963,19 +963,19 @@ func anyToUint64(v any) (n uint64, err error) <span class="cov8" title="1">{
                 if t &lt; 0 </span><span class="cov8" title="1">{
                         return 0, ErrNegativeValue
                 }</span>
-                <span class="cov0" title="0">n = uint64(t)</span>
-        case int64:<span class="cov0" title="0">
-                if t &lt; 0 </span><span class="cov0" title="0">{
+                <span class="cov8" title="1">n = uint64(t)</span>
+        case int64:<span class="cov8" title="1">
+                if t &lt; 0 </span><span class="cov8" title="1">{
                         return 0, ErrNegativeValue
                 }</span>
-                <span class="cov0" title="0">n = uint64(t)</span>
+                <span class="cov8" title="1">n = uint64(t)</span>
         case uint8:<span class="cov8" title="1">
                 n = uint64(t)</span>
-        case uint16:<span class="cov0" title="0">
+        case uint16:<span class="cov8" title="1">
                 n = uint64(t)</span>
-        case uint32:<span class="cov0" title="0">
+        case uint32:<span class="cov8" title="1">
                 n = uint64(t)</span>
-        case uint64:<span class="cov0" title="0">
+        case uint64:<span class="cov8" title="1">
                 n = t</span>
         default:<span class="cov8" title="1">
                 err = ErrInvalidNumberType</span>
