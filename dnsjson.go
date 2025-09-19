@@ -44,8 +44,12 @@
 package dnsjson
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
+	"net"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -289,6 +293,20 @@ func rrToJSON(rr dns.RR) RRJSON {
 		j.Data["selector"] = v.Selector
 		j.Data["matching_type"] = v.MatchingType
 		j.Data["cert_data"] = v.Certificate
+	case *dns.OPT:
+		j.Data["udp_size"] = v.UDPSize()
+		j.Data["extended_rcode"] = uint8(v.ExtendedRcode() >> 4)
+		j.Data["version"] = v.Version()
+		j.Data["do"] = v.Do()
+		j.Data["co"] = v.Co()
+		j.Data["z"] = v.Z()
+		if len(v.Option) > 0 {
+			opts := make([]map[string]any, 0, len(v.Option))
+			for _, opt := range v.Option {
+				opts = append(opts, ednsOptionToJSON(opt))
+			}
+			j.Data["options"] = opts
+		}
 	default:
 		// Fallback to presentation for unknown types to maintain coverage without wire format.
 		j.Data["raw"] = rr.String()
@@ -427,6 +445,49 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 					MatchingType: getUint8(j.Data, "matching_type"),
 					Certificate:  getString(j.Data, "cert_data"),
 				}
+			case dns.TypeOPT:
+				opt := &dns.OPT{Hdr: rrHdr(j, typeCode, classCode)}
+				if _, ok := j.Data["udp_size"]; ok {
+					opt.SetUDPSize(getUint16(j.Data, "udp_size"))
+				} else {
+					opt.SetUDPSize(classCode)
+				}
+				if _, ok := j.Data["extended_rcode"]; ok {
+					opt.SetExtendedRcode(uint16(getUint8(j.Data, "extended_rcode")) << 4)
+				}
+				if _, ok := j.Data["version"]; ok {
+					opt.SetVersion(getUint8(j.Data, "version"))
+				}
+				if do, ok := getBool(j.Data, "do"); ok {
+					opt.SetDo(do)
+				}
+				if co, ok := getBool(j.Data, "co"); ok {
+					opt.SetCo(co)
+				}
+				if _, ok := j.Data["z"]; ok {
+					opt.SetZ(getUint16(j.Data, "z"))
+				}
+				if raw, ok := j.Data["options"]; ok {
+					arr, ok := raw.([]any)
+					if !ok {
+						err = errors.Join(err, errors.New("opt options must be array"))
+					} else {
+						for idx, entry := range arr {
+							optMap, ok := entry.(map[string]any)
+							if !ok {
+								err = errors.Join(err, fmt.Errorf("opt options[%d] must be object", idx))
+								continue
+							}
+							o, e := ednsOptionFromJSON(optMap)
+							if e != nil {
+								err = errors.Join(err, e)
+								continue
+							}
+							opt.Option = append(opt.Option, o)
+						}
+					}
+				}
+				rr = opt
 			default:
 				// Best-effort fallback using presentation format stored in data.raw
 				if rr, err = dns.NewRR(strings.TrimSpace(getString(j.Data, "raw"))); err == nil {
@@ -442,6 +503,150 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 		}
 	}
 	return
+}
+
+func ednsOptionToJSON(opt dns.EDNS0) map[string]any {
+	m := map[string]any{
+		"code": optionCodeToString(opt.Option()),
+	}
+	switch o := opt.(type) {
+	case *dns.EDNS0_NSID:
+		m["nsid"] = strings.ToLower(o.Nsid)
+	case *dns.EDNS0_SUBNET:
+		m["family"] = o.Family
+		m["source_netmask"] = o.SourceNetmask
+		m["source_scope"] = o.SourceScope
+		if o.Address != nil {
+			m["address"] = o.Address.String()
+		}
+	case *dns.EDNS0_COOKIE:
+		m["cookie"] = strings.ToLower(o.Cookie)
+	case *dns.EDNS0_UL:
+		m["lease"] = o.Lease
+		m["key_lease"] = o.KeyLease
+	case *dns.EDNS0_LLQ:
+		m["version"] = o.Version
+		m["opcode"] = o.Opcode
+		m["error"] = o.Error
+		m["id"] = o.Id
+		m["lease_life"] = o.LeaseLife
+	case *dns.EDNS0_DAU:
+		m["alg_codes"] = uint8SliceToIntSlice(o.AlgCode)
+	case *dns.EDNS0_DHU:
+		m["alg_codes"] = uint8SliceToIntSlice(o.AlgCode)
+	case *dns.EDNS0_N3U:
+		m["alg_codes"] = uint8SliceToIntSlice(o.AlgCode)
+	case *dns.EDNS0_EXPIRE:
+		m["expire"] = o.Expire
+		if o.Empty {
+			m["empty"] = true
+		}
+	case *dns.EDNS0_LOCAL:
+		m["data"] = strings.ToLower(hex.EncodeToString(o.Data))
+	case *dns.EDNS0_TCP_KEEPALIVE:
+		m["timeout"] = o.Timeout
+	case *dns.EDNS0_PADDING:
+		m["padding"] = strings.ToLower(hex.EncodeToString(o.Padding))
+	case *dns.EDNS0_EDE:
+		m["info_code"] = o.InfoCode
+		m["extra_text"] = o.ExtraText
+	case *dns.EDNS0_ESU:
+		m["uri"] = o.Uri
+	default:
+		// No additional fields for unhandled option types.
+	}
+	return m
+}
+
+func ednsOptionFromJSON(m map[string]any) (dns.EDNS0, error) {
+	codeStr := getString(m, "code")
+	if codeStr == "" {
+		return nil, errors.New("opt option missing code")
+	}
+	code, err := stringToOptionCode(codeStr)
+	if err != nil {
+		return nil, fmt.Errorf("opt option %s: %w", codeStr, err)
+	}
+
+	switch code {
+	case dns.EDNS0NSID:
+		return &dns.EDNS0_NSID{Code: code, Nsid: strings.ToLower(getString(m, "nsid"))}, nil
+	case dns.EDNS0SUBNET:
+		opt := &dns.EDNS0_SUBNET{
+			Code:          code,
+			Family:        getUint16(m, "family"),
+			SourceNetmask: getUint8(m, "source_netmask"),
+			SourceScope:   getUint8(m, "source_scope"),
+		}
+		if addr := getString(m, "address"); addr != "" {
+			if ip := net.ParseIP(addr); ip != nil {
+				opt.Address = ip
+			}
+		}
+		return opt, nil
+	case dns.EDNS0COOKIE:
+		return &dns.EDNS0_COOKIE{Code: code, Cookie: strings.ToLower(getString(m, "cookie"))}, nil
+	case dns.EDNS0UL:
+		return &dns.EDNS0_UL{Code: code, Lease: getUint32(m, "lease"), KeyLease: getUint32(m, "key_lease")}, nil
+	case dns.EDNS0LLQ:
+		opt := &dns.EDNS0_LLQ{
+			Code:      code,
+			Version:   getUint16(m, "version"),
+			Opcode:    getUint16(m, "opcode"),
+			Error:     getUint16(m, "error"),
+			LeaseLife: getUint32(m, "lease_life"),
+		}
+		if raw, ok := m["id"]; ok {
+			id, e := anyToUint64(raw)
+			if e != nil {
+				return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+			}
+			opt.Id = id
+		}
+		return opt, nil
+	case dns.EDNS0DAU:
+		algs, e := getUint8Slice(m, "alg_codes")
+		if e != nil {
+			return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+		}
+		return &dns.EDNS0_DAU{Code: code, AlgCode: algs}, nil
+	case dns.EDNS0DHU:
+		algs, e := getUint8Slice(m, "alg_codes")
+		if e != nil {
+			return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+		}
+		return &dns.EDNS0_DHU{Code: code, AlgCode: algs}, nil
+	case dns.EDNS0N3U:
+		algs, e := getUint8Slice(m, "alg_codes")
+		if e != nil {
+			return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+		}
+		return &dns.EDNS0_N3U{Code: code, AlgCode: algs}, nil
+	case dns.EDNS0EXPIRE:
+		opt := &dns.EDNS0_EXPIRE{Code: code, Expire: getUint32(m, "expire")}
+		if empty, ok := getBool(m, "empty"); ok {
+			opt.Empty = empty
+		}
+		return opt, nil
+	case dns.EDNS0TCPKEEPALIVE:
+		return &dns.EDNS0_TCP_KEEPALIVE{Code: code, Timeout: getUint16(m, "timeout")}, nil
+	case dns.EDNS0PADDING:
+		padding, e := hex.DecodeString(getString(m, "padding"))
+		if e != nil {
+			return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+		}
+		return &dns.EDNS0_PADDING{Padding: padding}, nil
+	case dns.EDNS0EDE:
+		return &dns.EDNS0_EDE{InfoCode: getUint16(m, "info_code"), ExtraText: getString(m, "extra_text")}, nil
+	case dns.EDNS0ESU:
+		return &dns.EDNS0_ESU{Code: code, Uri: getString(m, "uri")}, nil
+	}
+
+	data, err := hex.DecodeString(getString(m, "data"))
+	if err != nil {
+		return nil, fmt.Errorf("opt option %s: %w", codeStr, err)
+	}
+	return &dns.EDNS0_LOCAL{Code: code, Data: data}, nil
 }
 
 func rrHdr(j RRJSON, t uint16, c uint16) dns.RR_Header {
@@ -487,6 +692,53 @@ func stringToClass(s string) (cls uint16, err error) {
 			cls = uint16(n)
 		} else {
 			err = &unknownClassError{value: s}
+		}
+	}
+	return
+}
+
+var optionCodeToName = map[uint16]string{
+	dns.EDNS0LLQ:          "LLQ",
+	dns.EDNS0UL:           "UL",
+	dns.EDNS0NSID:         "NSID",
+	dns.EDNS0DAU:          "DAU",
+	dns.EDNS0DHU:          "DHU",
+	dns.EDNS0N3U:          "N3U",
+	dns.EDNS0SUBNET:       "SUBNET",
+	dns.EDNS0EXPIRE:       "EXPIRE",
+	dns.EDNS0COOKIE:       "COOKIE",
+	dns.EDNS0TCPKEEPALIVE: "TCPKEEPALIVE",
+	dns.EDNS0PADDING:      "PADDING",
+	dns.EDNS0EDE:          "EDE",
+	dns.EDNS0ESU:          "ESU",
+}
+
+var optionNameToCode = func() map[string]uint16 {
+	out := make(map[string]uint16, len(optionCodeToName)+1)
+	for code, name := range optionCodeToName {
+		out[strings.ToUpper(name)] = code
+	}
+	out["TCP_KEEPALIVE"] = dns.EDNS0TCPKEEPALIVE
+	return out
+}()
+
+func optionCodeToString(code uint16) (s string) {
+	var ok bool
+	if s, ok = optionCodeToName[code]; !ok {
+		s = strconv.FormatUint(uint64(code), 10)
+	}
+	return
+}
+
+func stringToOptionCode(s string) (code uint16, err error) {
+	var ok bool
+	upper := strings.ToUpper(s)
+	if code, ok = optionNameToCode[upper]; !ok {
+		var n uint64
+		if n, err = strconv.ParseUint(s, 10, 16); err == nil {
+			code = uint16(n)
+		} else {
+			err = &unknownOptionError{value: s}
 		}
 	}
 	return
@@ -566,6 +818,110 @@ func getStringSlice(m map[string]any, key string) (out []string, err error) {
 	return
 }
 
+func getBool(m map[string]any, key string) (bool, bool) {
+	if m != nil {
+		if v, ok := m[key]; ok {
+			switch t := v.(type) {
+			case bool:
+				return t, true
+			case string:
+				if b, err := strconv.ParseBool(t); err == nil {
+					return b, true
+				}
+			case float64:
+				return t != 0, true
+			case json.Number:
+				if n, err := t.Int64(); err == nil {
+					return n != 0, true
+				}
+			}
+		}
+	}
+	return false, false
+}
+
+func getUint8Slice(m map[string]any, key string) (out []uint8, err error) {
+	if m != nil {
+		if raw, ok := m[key]; ok {
+			arr, ok := raw.([]any)
+			if !ok {
+				return nil, fmt.Errorf("%s must be array", key)
+			}
+			for idx, v := range arr {
+				val, e := anyToUint64(v)
+				if e != nil {
+					return nil, fmt.Errorf("%s[%d]: %w", key, idx, e)
+				}
+				if val > math.MaxUint8 {
+					return nil, fmt.Errorf("%s[%d]: value out of range", key, idx)
+				}
+				out = append(out, uint8(val))
+			}
+		}
+	}
+	return
+}
+
+func anyToUint64(v any) (uint64, error) {
+	switch t := v.(type) {
+	case float64:
+		if t < 0 {
+			return 0, fmt.Errorf("negative value")
+		}
+		return uint64(t), nil
+	case json.Number:
+		if s := t.String(); s != "" {
+			if n, err := strconv.ParseUint(s, 10, 64); err == nil {
+				return n, nil
+			}
+		}
+		if n, err := t.Int64(); err == nil {
+			if n < 0 {
+				return 0, fmt.Errorf("negative value")
+			}
+			return uint64(n), nil
+		}
+		return 0, fmt.Errorf("invalid number")
+	case string:
+		if t == "" {
+			return 0, nil
+		}
+		n, err := strconv.ParseUint(t, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return n, nil
+	case int:
+		if t < 0 {
+			return 0, fmt.Errorf("negative value")
+		}
+		return uint64(t), nil
+	case int64:
+		if t < 0 {
+			return 0, fmt.Errorf("negative value")
+		}
+		return uint64(t), nil
+	case uint8:
+		return uint64(t), nil
+	case uint16:
+		return uint64(t), nil
+	case uint32:
+		return uint64(t), nil
+	case uint64:
+		return t, nil
+	default:
+		return 0, fmt.Errorf("invalid number type %T", v)
+	}
+}
+
+func uint8SliceToIntSlice(in []uint8) []int {
+	out := make([]int, 0, len(in))
+	for _, v := range in {
+		out = append(out, int(v))
+	}
+	return out
+}
+
 type wrappedError struct {
 	sentinel error
 	err      error
@@ -612,6 +968,14 @@ func (e *unknownClassError) Error() string {
 
 func (e *unknownClassError) Is(target error) bool {
 	return target == ErrUnknownClass
+}
+
+type unknownOptionError struct {
+	value string
+}
+
+func (e *unknownOptionError) Error() string {
+	return "unknown option code " + strconv.Quote(e.value)
 }
 
 type stringSliceError struct {
