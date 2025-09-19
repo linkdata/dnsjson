@@ -46,7 +46,6 @@ package dnsjson
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -430,19 +429,14 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 				}
 			default:
 				// Best-effort fallback using presentation format stored in data.raw
-				raw := getString(j.Data, "raw")
-				if raw == "" {
-					// try to synthesize: "Name TTL Class Type <empty>"
-					raw = fmt.Sprintf("%s %d %s %s", j.Name, j.TTL, j.Class, j.Type)
-				}
-				if rr, err = dns.NewRR(raw); err == nil {
+				if rr, err = dns.NewRR(strings.TrimSpace(getString(j.Data, "raw"))); err == nil {
 					// NewRR does not preserve TTL/class/name from header in raw string if omitted; ensure header set
-					h := rr.Header()
-					h.Name, h.Class, h.Rrtype, h.Ttl = j.Name, classCode, typeCode, j.TTL
-					rr.Header().Name = h.Name
-					rr.Header().Class = h.Class
-					rr.Header().Rrtype = h.Rrtype
-					rr.Header().Ttl = h.Ttl
+					if h := rr.Header(); h != nil {
+						h.Name = j.Name
+						h.Class = classCode
+						h.Rrtype = typeCode
+						h.Ttl = j.TTL
+					}
 				}
 			}
 		}
