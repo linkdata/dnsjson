@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (96.4%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (98.3%)</option>
 				
 				</select>
 			</div>
@@ -632,101 +632,95 @@ func ednsOptionToJSON(opt dns.EDNS0) map[string]any <span class="cov8" title="1"
                 m["extra_text"] = o.ExtraText</span>
         case *dns.EDNS0_ESU:<span class="cov8" title="1">
                 m["uri"] = o.Uri</span>
-        default:<span class="cov0" title="0"></span>
-                // No additional fields for unhandled option types.
         }
         <span class="cov8" title="1">return m</span>
 }
 
-func ednsOptionFromJSON(m map[string]any) (dns.EDNS0, error) <span class="cov8" title="1">{
-        codeStr := getString(m, "code")
-        if codeStr == "" </span><span class="cov0" title="0">{
-                return nil, ErrEDNSOptionNoCode
-        }</span>
-        <span class="cov8" title="1">code, err := stringToOptionCode(codeStr)
-        if err != nil </span><span class="cov0" title="0">{
-                return nil, &amp;optOptionCodeError{code: codeStr, err: err}
-        }</span>
-
-        <span class="cov8" title="1">switch code </span>{
-        case dns.EDNS0NSID:<span class="cov8" title="1">
-                return &amp;dns.EDNS0_NSID{Code: code, Nsid: strings.ToLower(getString(m, "nsid"))}, nil</span>
-        case dns.EDNS0SUBNET:<span class="cov8" title="1">
-                opt := &amp;dns.EDNS0_SUBNET{
-                        Code:          code,
-                        Family:        getUint16(m, "family"),
-                        SourceNetmask: getUint8(m, "source_netmask"),
-                        SourceScope:   getUint8(m, "source_scope"),
-                }
-                if addr := getString(m, "address"); addr != "" </span><span class="cov8" title="1">{
-                        if ip := net.ParseIP(addr); ip != nil </span><span class="cov8" title="1">{
-                                opt.Address = ip
+func ednsOptionFromJSON(m map[string]any) (rr dns.EDNS0, err error) <span class="cov8" title="1">{
+        err = ErrEDNSOptionNoCode
+        if codeStr := getString(m, "code"); codeStr != "" </span><span class="cov8" title="1">{
+                var code uint16
+                if code, err = stringToOptionCode(codeStr); err == nil </span><span class="cov8" title="1">{
+                        switch code </span>{
+                        case dns.EDNS0NSID:<span class="cov8" title="1">
+                                rr = &amp;dns.EDNS0_NSID{Code: code, Nsid: strings.ToLower(getString(m, "nsid"))}</span>
+                        case dns.EDNS0SUBNET:<span class="cov8" title="1">
+                                var address net.IP
+                                if addr := getString(m, "address"); addr != "" </span><span class="cov8" title="1">{
+                                        var ip netip.Addr
+                                        if ip, err = netip.ParseAddr(addr); err == nil </span><span class="cov8" title="1">{
+                                                address = ip.AsSlice()
+                                        }</span>
+                                }
+                                <span class="cov8" title="1">if err == nil </span><span class="cov8" title="1">{
+                                        rr = &amp;dns.EDNS0_SUBNET{
+                                                Code:          code,
+                                                Family:        getUint16(m, "family"),
+                                                SourceNetmask: getUint8(m, "source_netmask"),
+                                                SourceScope:   getUint8(m, "source_scope"),
+                                                Address:       address,
+                                        }
+                                }</span>
+                        case dns.EDNS0COOKIE:<span class="cov8" title="1">
+                                rr = &amp;dns.EDNS0_COOKIE{Code: code, Cookie: strings.ToLower(getString(m, "cookie"))}</span>
+                        case dns.EDNS0UL:<span class="cov8" title="1">
+                                rr = &amp;dns.EDNS0_UL{Code: code, Lease: getUint32(m, "lease"), KeyLease: getUint32(m, "key_lease")}</span>
+                        case dns.EDNS0LLQ:<span class="cov8" title="1">
+                                var id uint64
+                                if raw, ok := m["id"]; ok </span><span class="cov8" title="1">{
+                                        id, err = anyToUint64(raw)
+                                }</span>
+                                <span class="cov8" title="1">if err == nil </span><span class="cov8" title="1">{
+                                        rr = &amp;dns.EDNS0_LLQ{
+                                                Id:        id,
+                                                Code:      code,
+                                                Version:   getUint16(m, "version"),
+                                                Opcode:    getUint16(m, "opcode"),
+                                                Error:     getUint16(m, "error"),
+                                                LeaseLife: getUint32(m, "lease_life"),
+                                        }
+                                }</span>
+                        case dns.EDNS0DAU:<span class="cov8" title="1">
+                                var algs []uint8
+                                if algs, err = getUint8Slice(m, "alg_codes"); err == nil </span><span class="cov8" title="1">{
+                                        rr = &amp;dns.EDNS0_DAU{Code: code, AlgCode: algs}
+                                }</span>
+                        case dns.EDNS0DHU:<span class="cov8" title="1">
+                                var algs []uint8
+                                if algs, err = getUint8Slice(m, "alg_codes"); err == nil </span><span class="cov8" title="1">{
+                                        rr = &amp;dns.EDNS0_DHU{Code: code, AlgCode: algs}
+                                }</span>
+                        case dns.EDNS0N3U:<span class="cov8" title="1">
+                                var algs []uint8
+                                if algs, err = getUint8Slice(m, "alg_codes"); err == nil </span><span class="cov8" title="1">{
+                                        rr = &amp;dns.EDNS0_N3U{Code: code, AlgCode: algs}
+                                }</span>
+                        case dns.EDNS0EXPIRE:<span class="cov8" title="1">
+                                empty, _ := getBool(m, "empty")
+                                rr = &amp;dns.EDNS0_EXPIRE{Code: code, Expire: getUint32(m, "expire"), Empty: empty}</span>
+                        case dns.EDNS0TCPKEEPALIVE:<span class="cov8" title="1">
+                                rr = &amp;dns.EDNS0_TCP_KEEPALIVE{Code: code, Timeout: getUint16(m, "timeout")}</span>
+                        case dns.EDNS0PADDING:<span class="cov8" title="1">
+                                var padding []byte
+                                if padding, err = hex.DecodeString(getString(m, "padding")); err == nil </span><span class="cov8" title="1">{
+                                        rr = &amp;dns.EDNS0_PADDING{Padding: padding}
+                                }</span>
+                        case dns.EDNS0EDE:<span class="cov8" title="1">
+                                rr = &amp;dns.EDNS0_EDE{InfoCode: getUint16(m, "info_code"), ExtraText: getString(m, "extra_text")}</span>
+                        case dns.EDNS0ESU:<span class="cov8" title="1">
+                                rr = &amp;dns.EDNS0_ESU{Code: code, Uri: getString(m, "uri")}</span>
+                        default:<span class="cov8" title="1">
+                                var data []byte
+                                if data, err = hex.DecodeString(getString(m, "data")); err == nil </span><span class="cov8" title="1">{
+                                        rr = &amp;dns.EDNS0_LOCAL{Code: code, Data: data}
+                                }</span>
+                        }
+                        <span class="cov8" title="1">if err != nil </span><span class="cov0" title="0">{
+                                err = &amp;optOptionCodeError{code: codeStr, err: err}
                         }</span>
                 }
-                <span class="cov8" title="1">return opt, nil</span>
-        case dns.EDNS0COOKIE:<span class="cov8" title="1">
-                return &amp;dns.EDNS0_COOKIE{Code: code, Cookie: strings.ToLower(getString(m, "cookie"))}, nil</span>
-        case dns.EDNS0UL:<span class="cov8" title="1">
-                return &amp;dns.EDNS0_UL{Code: code, Lease: getUint32(m, "lease"), KeyLease: getUint32(m, "key_lease")}, nil</span>
-        case dns.EDNS0LLQ:<span class="cov8" title="1">
-                opt := &amp;dns.EDNS0_LLQ{
-                        Code:      code,
-                        Version:   getUint16(m, "version"),
-                        Opcode:    getUint16(m, "opcode"),
-                        Error:     getUint16(m, "error"),
-                        LeaseLife: getUint32(m, "lease_life"),
-                }
-                if raw, ok := m["id"]; ok </span><span class="cov8" title="1">{
-                        id, e := anyToUint64(raw)
-                        if e != nil </span><span class="cov0" title="0">{
-                                return nil, &amp;optOptionCodeError{code: codeStr, err: e}
-                        }</span>
-                        <span class="cov8" title="1">opt.Id = id</span>
-                }
-                <span class="cov8" title="1">return opt, nil</span>
-        case dns.EDNS0DAU:<span class="cov8" title="1">
-                algs, e := getUint8Slice(m, "alg_codes")
-                if e != nil </span><span class="cov0" title="0">{
-                        return nil, &amp;optOptionCodeError{code: codeStr, err: e}
-                }</span>
-                <span class="cov8" title="1">return &amp;dns.EDNS0_DAU{Code: code, AlgCode: algs}, nil</span>
-        case dns.EDNS0DHU:<span class="cov8" title="1">
-                algs, e := getUint8Slice(m, "alg_codes")
-                if e != nil </span><span class="cov0" title="0">{
-                        return nil, &amp;optOptionCodeError{code: codeStr, err: e}
-                }</span>
-                <span class="cov8" title="1">return &amp;dns.EDNS0_DHU{Code: code, AlgCode: algs}, nil</span>
-        case dns.EDNS0N3U:<span class="cov8" title="1">
-                algs, e := getUint8Slice(m, "alg_codes")
-                if e != nil </span><span class="cov0" title="0">{
-                        return nil, &amp;optOptionCodeError{code: codeStr, err: e}
-                }</span>
-                <span class="cov8" title="1">return &amp;dns.EDNS0_N3U{Code: code, AlgCode: algs}, nil</span>
-        case dns.EDNS0EXPIRE:<span class="cov8" title="1">
-                opt := &amp;dns.EDNS0_EXPIRE{Code: code, Expire: getUint32(m, "expire")}
-                if empty, ok := getBool(m, "empty"); ok </span><span class="cov0" title="0">{
-                        opt.Empty = empty
-                }</span>
-                <span class="cov8" title="1">return opt, nil</span>
-        case dns.EDNS0TCPKEEPALIVE:<span class="cov8" title="1">
-                return &amp;dns.EDNS0_TCP_KEEPALIVE{Code: code, Timeout: getUint16(m, "timeout")}, nil</span>
-        case dns.EDNS0PADDING:<span class="cov8" title="1">
-                padding, e := hex.DecodeString(getString(m, "padding"))
-                if e != nil </span><span class="cov0" title="0">{
-                        return nil, &amp;optOptionCodeError{code: codeStr, err: e}
-                }</span>
-                <span class="cov8" title="1">return &amp;dns.EDNS0_PADDING{Padding: padding}, nil</span>
-        case dns.EDNS0EDE:<span class="cov8" title="1">
-                return &amp;dns.EDNS0_EDE{InfoCode: getUint16(m, "info_code"), ExtraText: getString(m, "extra_text")}, nil</span>
-        case dns.EDNS0ESU:<span class="cov8" title="1">
-                return &amp;dns.EDNS0_ESU{Code: code, Uri: getString(m, "uri")}, nil</span>
         }
-
-        <span class="cov8" title="1">data, err := hex.DecodeString(getString(m, "data"))
-        if err != nil </span><span class="cov0" title="0">{
-                return nil, &amp;optOptionCodeError{code: codeStr, err: err}
-        }</span>
-        <span class="cov8" title="1">return &amp;dns.EDNS0_LOCAL{Code: code, Data: data}, nil</span>
+        <span class="cov8" title="1">return</span>
 }
 
 func rrHdr(j RRJSON, t uint16, c uint16) dns.RR_Header <span class="cov8" title="1">{
