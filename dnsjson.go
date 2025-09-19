@@ -1,5 +1,4 @@
-// Provides JSON marshalling/unmarshalling *dns.Msg
-// using an explicit, human-readable JSON schema (no wire-format fields).
+// Provides JSON marshalling/unmarshalling *dns.Msg using an explicit, human-readable JSON schema.
 //
 // Schema overview (stable keys; rdata keys per RR type listed below):
 // {
