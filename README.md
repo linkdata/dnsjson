@@ -5,6 +5,8 @@
 
 # dnsjson
 
+JSON (un)marshalling for https://github.com/miekg/dns
+
 ```go
 package main
 
