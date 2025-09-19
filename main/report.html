@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (99.0%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (99.3%)</option>
 				
 				</select>
 			</div>
@@ -617,7 +617,7 @@ func ednsOptionToJSON(opt dns.EDNS0) map[string]any <span class="cov8" title="1"
                 m["alg_codes"] = uint8SliceToIntSlice(o.AlgCode)</span>
         case *dns.EDNS0_EXPIRE:<span class="cov8" title="1">
                 m["expire"] = o.Expire
-                if o.Empty </span><span class="cov0" title="0">{
+                if o.Empty </span><span class="cov8" title="1">{
                         m["empty"] = true
                 }</span>
         case *dns.EDNS0_LOCAL:<span class="cov8" title="1">
