@@ -142,8 +142,8 @@ func (msg *Msg) UnmarshalJSON(data []byte) (err error) {
 			if string(raw) != "null" {
 				var j MessageJSON
 				if err = wrapError(ErrInvalidMessage, json.Unmarshal(raw, &j)); err == nil {
-					msg.Id = j.ID
 					msg.MsgHdr = hdrFromJSON(j.MsgHdr)
+					msg.Id = j.ID
 					// Questions
 					for _, qj := range j.Question {
 						qt, e := stringToType(qj.Qtype)
