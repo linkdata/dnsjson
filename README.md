@@ -7,6 +7,8 @@
 
 JSON (un)marshalling for https://github.com/miekg/dns
 
+This is not [RFC 8427](https://www.rfc-editor.org/rfc/rfc8427.html), rather it is a structured human-readable format.
+
 ```go
 package main
 
