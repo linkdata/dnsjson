@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (63.8%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (99.5%)</option>
 				
 				</select>
 			</div>
@@ -213,8 +213,8 @@ func (msg *Msg) UnmarshalJSON(data []byte) (err error) <span class="cov8" title=
                         if string(raw) != "null" </span><span class="cov8" title="1">{
                                 var j MessageJSON
                                 if err = wrapError(ErrInvalidMessage, json.Unmarshal(raw, &amp;j)); err == nil </span><span class="cov8" title="1">{
-                                        msg.Id = j.ID
                                         msg.MsgHdr = hdrFromJSON(j.MsgHdr)
+                                        msg.Id = j.ID
                                         // Questions
                                         for _, qj := range j.Question </span><span class="cov8" title="1">{
                                                 qt, e := stringToType(qj.Qtype)
@@ -270,7 +270,7 @@ func hdrFromJSON(j MsgHdr) (mh dns.MsgHdr) <span class="cov8" title="1">{
 }</span>
 
 func rrsToJSON(rrs []dns.RR) (out []RRJSON) <span class="cov8" title="1">{
-        for _, rr := range rrs </span><span class="cov0" title="0">{
+        for _, rr := range rrs </span><span class="cov8" title="1">{
                 out = append(out, rrToJSON(rr))
         }</span>
         <span class="cov8" title="1">return</span>
@@ -287,7 +287,7 @@ func rrsFromJSON(rrjs []RRJSON) (out []dns.RR, err error) <span class="cov8" tit
         <span class="cov8" title="1">return</span>
 }
 
-func rrToJSON(rr dns.RR) RRJSON <span class="cov0" title="0">{
+func rrToJSON(rr dns.RR) RRJSON <span class="cov8" title="1">{
         h := rr.Header()
         j := RRJSON{
                 Name:  h.Name,
@@ -297,27 +297,27 @@ func rrToJSON(rr dns.RR) RRJSON <span class="cov0" title="0">{
                 Data:  map[string]any{},
         }
         switch v := rr.(type) </span>{
-        case *dns.A:<span class="cov0" title="0">
+        case *dns.A:<span class="cov8" title="1">
                 j.Data["a"] = v.A.String()</span>
-        case *dns.AAAA:<span class="cov0" title="0">
+        case *dns.AAAA:<span class="cov8" title="1">
                 j.Data["aaaa"] = v.AAAA.String()</span>
-        case *dns.CNAME:<span class="cov0" title="0">
+        case *dns.CNAME:<span class="cov8" title="1">
                 j.Data["target"] = v.Target</span>
-        case *dns.NS:<span class="cov0" title="0">
+        case *dns.NS:<span class="cov8" title="1">
                 j.Data["ns"] = v.Ns</span>
-        case *dns.PTR:<span class="cov0" title="0">
+        case *dns.PTR:<span class="cov8" title="1">
                 j.Data["ptr"] = v.Ptr</span>
-        case *dns.TXT:<span class="cov0" title="0">
+        case *dns.TXT:<span class="cov8" title="1">
                 j.Data["txt"] = append([]string(nil), v.Txt...)</span>
-        case *dns.MX:<span class="cov0" title="0">
+        case *dns.MX:<span class="cov8" title="1">
                 j.Data["preference"] = v.Preference
                 j.Data["mx"] = v.Mx</span>
-        case *dns.SRV:<span class="cov0" title="0">
+        case *dns.SRV:<span class="cov8" title="1">
                 j.Data["priority"] = v.Priority
                 j.Data["weight"] = v.Weight
                 j.Data["port"] = v.Port
                 j.Data["target"] = v.Target</span>
-        case *dns.SOA:<span class="cov0" title="0">
+        case *dns.SOA:<span class="cov8" title="1">
                 j.Data["ns"] = v.Ns
                 j.Data["mbox"] = v.Mbox
                 j.Data["serial"] = v.Serial
@@ -325,28 +325,28 @@ func rrToJSON(rr dns.RR) RRJSON <span class="cov0" title="0">{
                 j.Data["retry"] = v.Retry
                 j.Data["expire"] = v.Expire
                 j.Data["minttl"] = v.Minttl</span>
-        case *dns.CAA:<span class="cov0" title="0">
+        case *dns.CAA:<span class="cov8" title="1">
                 j.Data["flag"] = v.Flag
                 j.Data["tag"] = v.Tag
                 j.Data["value"] = v.Value</span>
-        case *dns.NAPTR:<span class="cov0" title="0">
+        case *dns.NAPTR:<span class="cov8" title="1">
                 j.Data["order"] = v.Order
                 j.Data["preference"] = v.Preference
                 j.Data["flags"] = v.Flags
                 j.Data["service"] = v.Service
                 j.Data["regexp"] = v.Regexp
                 j.Data["replacement"] = v.Replacement</span>
-        case *dns.DS:<span class="cov0" title="0">
+        case *dns.DS:<span class="cov8" title="1">
                 j.Data["key_tag"] = v.KeyTag
                 j.Data["algorithm"] = v.Algorithm
                 j.Data["digest_type"] = v.DigestType
                 j.Data["digest"] = strings.ToLower(v.Digest)</span>
-        case *dns.DNSKEY:<span class="cov0" title="0">
+        case *dns.DNSKEY:<span class="cov8" title="1">
                 j.Data["flags"] = v.Flags
                 j.Data["protocol"] = v.Protocol
                 j.Data["algorithm"] = v.Algorithm
                 j.Data["public_key"] = v.PublicKey</span>
-        case *dns.RRSIG:<span class="cov0" title="0">
+        case *dns.RRSIG:<span class="cov8" title="1">
                 j.Data["type_covered"] = typeToString(v.TypeCovered)
                 j.Data["algorithm"] = v.Algorithm
                 j.Data["labels"] = v.Labels
@@ -356,16 +356,16 @@ func rrToJSON(rr dns.RR) RRJSON <span class="cov0" title="0">{
                 j.Data["key_tag"] = v.KeyTag
                 j.Data["signer_name"] = v.SignerName
                 j.Data["signature"] = v.Signature</span>
-        case *dns.TLSA:<span class="cov0" title="0">
+        case *dns.TLSA:<span class="cov8" title="1">
                 j.Data["usage"] = v.Usage
                 j.Data["selector"] = v.Selector
                 j.Data["matching_type"] = v.MatchingType
                 j.Data["cert_data"] = v.Certificate</span>
-        default:<span class="cov0" title="0">
+        default:<span class="cov8" title="1">
                 // Fallback to presentation for unknown types to maintain coverage without wire format.
                 j.Data["raw"] = rr.String()</span>
         }
-        <span class="cov0" title="0">return j</span>
+        <span class="cov8" title="1">return j</span>
 }
 
 func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
@@ -384,46 +384,46 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                                                 }
                                         }</span>
                                 }
-                        case dns.TypeAAAA:<span class="cov0" title="0">
+                        case dns.TypeAAAA:<span class="cov8" title="1">
                                 var ip netip.Addr
-                                if ip, err = netip.ParseAddr(getString(j.Data, "aaaa")); err == nil </span><span class="cov0" title="0">{
-                                        if ip.Is6() </span><span class="cov0" title="0">{
+                                if ip, err = netip.ParseAddr(getString(j.Data, "aaaa")); err == nil </span><span class="cov8" title="1">{
+                                        if ip.Is6() </span><span class="cov8" title="1">{
                                                 rr = &amp;dns.AAAA{
                                                         Hdr:  rrHdr(j, typeCode, classCode),
                                                         AAAA: ip.AsSlice(),
                                                 }
                                         }</span>
                                 }
-                        case dns.TypeCNAME:<span class="cov0" title="0">
+                        case dns.TypeCNAME:<span class="cov8" title="1">
                                 rr = &amp;dns.CNAME{
                                         Hdr:    rrHdr(j, typeCode, classCode),
                                         Target: getString(j.Data, "target"),
                                 }</span>
-                        case dns.TypeNS:<span class="cov0" title="0">
+                        case dns.TypeNS:<span class="cov8" title="1">
                                 rr = &amp;dns.NS{
                                         Hdr: rrHdr(j, typeCode, classCode),
                                         Ns:  getString(j.Data, "ns"),
                                 }</span>
-                        case dns.TypePTR:<span class="cov0" title="0">
+                        case dns.TypePTR:<span class="cov8" title="1">
                                 rr = &amp;dns.PTR{
                                         Hdr: rrHdr(j, typeCode, classCode),
                                         Ptr: getString(j.Data, "ptr"),
                                 }</span>
-                        case dns.TypeTXT:<span class="cov0" title="0">
+                        case dns.TypeTXT:<span class="cov8" title="1">
                                 var arr []string
-                                if arr, err = getStringSlice(j.Data, "txt"); err == nil </span><span class="cov0" title="0">{
+                                if arr, err = getStringSlice(j.Data, "txt"); err == nil </span><span class="cov8" title="1">{
                                         rr = &amp;dns.TXT{
                                                 Hdr: rrHdr(j, typeCode, classCode),
                                                 Txt: arr,
                                         }
                                 }</span>
-                        case dns.TypeMX:<span class="cov0" title="0">
+                        case dns.TypeMX:<span class="cov8" title="1">
                                 rr = &amp;dns.MX{
                                         Hdr:        rrHdr(j, typeCode, classCode),
                                         Preference: getUint16(j.Data, "preference"),
                                         Mx:         getString(j.Data, "mx"),
                                 }</span>
-                        case dns.TypeSRV:<span class="cov0" title="0">
+                        case dns.TypeSRV:<span class="cov8" title="1">
                                 rr = &amp;dns.SRV{
                                         Hdr:      rrHdr(j, typeCode, classCode),
                                         Priority: getUint16(j.Data, "priority"),
@@ -431,7 +431,7 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                                         Port:     getUint16(j.Data, "port"),
                                         Target:   getString(j.Data, "target"),
                                 }</span>
-                        case dns.TypeSOA:<span class="cov0" title="0">
+                        case dns.TypeSOA:<span class="cov8" title="1">
                                 rr = &amp;dns.SOA{
                                         Hdr:     rrHdr(j, typeCode, classCode),
                                         Ns:      getString(j.Data, "ns"),
@@ -442,14 +442,14 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                                         Expire:  getUint32(j.Data, "expire"),
                                         Minttl:  getUint32(j.Data, "minttl"),
                                 }</span>
-                        case dns.TypeCAA:<span class="cov0" title="0">
+                        case dns.TypeCAA:<span class="cov8" title="1">
                                 rr = &amp;dns.CAA{
                                         Hdr:   rrHdr(j, typeCode, classCode),
                                         Flag:  getUint8(j.Data, "flag"),
                                         Tag:   getString(j.Data, "tag"),
                                         Value: getString(j.Data, "value"),
                                 }</span>
-                        case dns.TypeNAPTR:<span class="cov0" title="0">
+                        case dns.TypeNAPTR:<span class="cov8" title="1">
                                 rr = &amp;dns.NAPTR{
                                         Hdr:         rrHdr(j, typeCode, classCode),
                                         Order:       getUint16(j.Data, "order"),
@@ -459,7 +459,7 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                                         Regexp:      getString(j.Data, "regexp"),
                                         Replacement: getString(j.Data, "replacement"),
                                 }</span>
-                        case dns.TypeDS:<span class="cov0" title="0">
+                        case dns.TypeDS:<span class="cov8" title="1">
                                 rr = &amp;dns.DS{
                                         Hdr:        rrHdr(j, typeCode, classCode),
                                         KeyTag:     getUint16(j.Data, "key_tag"),
@@ -467,7 +467,7 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                                         DigestType: getUint8(j.Data, "digest_type"),
                                         Digest:     strings.ToUpper(getString(j.Data, "digest")),
                                 }</span>
-                        case dns.TypeDNSKEY:<span class="cov0" title="0">
+                        case dns.TypeDNSKEY:<span class="cov8" title="1">
                                 rr = &amp;dns.DNSKEY{
                                         Hdr:       rrHdr(j, typeCode, classCode),
                                         Flags:     getUint16(j.Data, "flags"),
@@ -475,9 +475,9 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                                         Algorithm: getUint8(j.Data, "algorithm"),
                                         PublicKey: getString(j.Data, "public_key"),
                                 }</span>
-                        case dns.TypeRRSIG:<span class="cov0" title="0">
+                        case dns.TypeRRSIG:<span class="cov8" title="1">
                                 var cov uint16
-                                if cov, err = stringToType(getString(j.Data, "type_covered")); err == nil </span><span class="cov0" title="0">{
+                                if cov, err = stringToType(getString(j.Data, "type_covered")); err == nil </span><span class="cov8" title="1">{
                                         rr = &amp;dns.RRSIG{
                                                 Hdr:         rrHdr(j, typeCode, classCode),
                                                 TypeCovered: cov,
@@ -491,7 +491,7 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                                                 Signature:   getString(j.Data, "signature"),
                                         }
                                 }</span>
-                        case dns.TypeTLSA:<span class="cov0" title="0">
+                        case dns.TypeTLSA:<span class="cov8" title="1">
                                 rr = &amp;dns.TLSA{
                                         Hdr:          rrHdr(j, typeCode, classCode),
                                         Usage:        getUint8(j.Data, "usage"),
