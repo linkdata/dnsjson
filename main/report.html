@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (100.0%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (87.0%)</option>
 				
 				</select>
 			</div>
@@ -115,8 +115,12 @@
 package dnsjson
 
 import (
+        "encoding/hex"
         "encoding/json"
         "errors"
+        "fmt"
+        "math"
+        "net"
         "net/netip"
         "strconv"
         "strings"
@@ -130,11 +134,11 @@ var _ json.Marshaler = &amp;Msg{}
 var _ json.Unmarshaler = &amp;Msg{}
 
 var (
-        ErrEmptyInput         = errors.New("dnsjson: empty input")
-        ErrInvalidJSON        = errors.New("dnsjson: invalid JSON")
-        ErrInvalidMessage     = errors.New("dnsjson: invalid message")
-        ErrQuestionQType      = errors.New("dnsjson: question qtype")
-        ErrQuestionQClass     = errors.New("dnsjson: question qclass")
+        ErrEmptyInput         = errors.New("empty input")
+        ErrInvalidJSON        = errors.New("invalid JSON")
+        ErrInvalidMessage     = errors.New("invalid message")
+        ErrQuestionQType      = errors.New("question qtype")
+        ErrQuestionQClass     = errors.New("question qclass")
         ErrAnswerSection      = errors.New("answer")
         ErrNsSection          = errors.New("ns")
         ErrExtraSection       = errors.New("extra")
@@ -360,6 +364,20 @@ func rrToJSON(rr dns.RR) RRJSON <span class="cov8" title="1">{
                 j.Data["selector"] = v.Selector
                 j.Data["matching_type"] = v.MatchingType
                 j.Data["cert_data"] = v.Certificate</span>
+        case *dns.OPT:<span class="cov8" title="1">
+                j.Data["udp_size"] = v.UDPSize()
+                j.Data["extended_rcode"] = uint8(v.ExtendedRcode() &gt;&gt; 4) // #nosec G115
+                j.Data["version"] = v.Version()
+                j.Data["do"] = v.Do()
+                j.Data["co"] = v.Co()
+                j.Data["z"] = v.Z()
+                if len(v.Option) &gt; 0 </span><span class="cov8" title="1">{
+                        opts := make([]map[string]any, 0, len(v.Option))
+                        for _, opt := range v.Option </span><span class="cov8" title="1">{
+                                opts = append(opts, ednsOptionToJSON(opt))
+                        }</span>
+                        <span class="cov8" title="1">j.Data["options"] = opts</span>
+                }
         default:<span class="cov8" title="1">
                 // Fallback to presentation for unknown types to maintain coverage without wire format.
                 j.Data["raw"] = rr.String()</span>
@@ -498,6 +516,49 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                                         MatchingType: getUint8(j.Data, "matching_type"),
                                         Certificate:  getString(j.Data, "cert_data"),
                                 }</span>
+                        case dns.TypeOPT:<span class="cov8" title="1">
+                                opt := &amp;dns.OPT{Hdr: rrHdr(j, typeCode, classCode)}
+                                if _, ok := j.Data["udp_size"]; ok </span><span class="cov8" title="1">{
+                                        opt.SetUDPSize(getUint16(j.Data, "udp_size"))
+                                }</span> else<span class="cov0" title="0"> {
+                                        opt.SetUDPSize(classCode)
+                                }</span>
+                                <span class="cov8" title="1">if _, ok := j.Data["extended_rcode"]; ok </span><span class="cov8" title="1">{
+                                        opt.SetExtendedRcode(uint16(getUint8(j.Data, "extended_rcode")) &lt;&lt; 4)
+                                }</span>
+                                <span class="cov8" title="1">if _, ok := j.Data["version"]; ok </span><span class="cov8" title="1">{
+                                        opt.SetVersion(getUint8(j.Data, "version"))
+                                }</span>
+                                <span class="cov8" title="1">if do, ok := getBool(j.Data, "do"); ok </span><span class="cov8" title="1">{
+                                        opt.SetDo(do)
+                                }</span>
+                                <span class="cov8" title="1">if co, ok := getBool(j.Data, "co"); ok </span><span class="cov8" title="1">{
+                                        opt.SetCo(co)
+                                }</span>
+                                <span class="cov8" title="1">if _, ok := j.Data["z"]; ok </span><span class="cov8" title="1">{
+                                        opt.SetZ(getUint16(j.Data, "z"))
+                                }</span>
+                                <span class="cov8" title="1">if raw, ok := j.Data["options"]; ok </span><span class="cov8" title="1">{
+                                        arr, ok := raw.([]any)
+                                        if !ok </span><span class="cov0" title="0">{
+                                                err = errors.Join(err, errors.New("opt options must be array"))
+                                        }</span> else<span class="cov8" title="1"> {
+                                                for idx, entry := range arr </span><span class="cov8" title="1">{
+                                                        optMap, ok := entry.(map[string]any)
+                                                        if !ok </span><span class="cov0" title="0">{
+                                                                err = errors.Join(err, fmt.Errorf("opt options[%d] must be object", idx))
+                                                                continue</span>
+                                                        }
+                                                        <span class="cov8" title="1">o, e := ednsOptionFromJSON(optMap)
+                                                        if e != nil </span><span class="cov0" title="0">{
+                                                                err = errors.Join(err, e)
+                                                                continue</span>
+                                                        }
+                                                        <span class="cov8" title="1">opt.Option = append(opt.Option, o)</span>
+                                                }
+                                        }
+                                }
+                                <span class="cov8" title="1">rr = opt</span>
                         default:<span class="cov8" title="1">
                                 // Best-effort fallback using presentation format stored in data.raw
                                 if rr, err = dns.NewRR(strings.TrimSpace(getString(j.Data, "raw"))); err == nil </span><span class="cov8" title="1">{
@@ -513,6 +574,150 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                 }
         }
         <span class="cov8" title="1">return</span>
+}
+
+func ednsOptionToJSON(opt dns.EDNS0) map[string]any <span class="cov8" title="1">{
+        m := map[string]any{
+                "code": optionCodeToString(opt.Option()),
+        }
+        switch o := opt.(type) </span>{
+        case *dns.EDNS0_NSID:<span class="cov8" title="1">
+                m["nsid"] = strings.ToLower(o.Nsid)</span>
+        case *dns.EDNS0_SUBNET:<span class="cov8" title="1">
+                m["family"] = o.Family
+                m["source_netmask"] = o.SourceNetmask
+                m["source_scope"] = o.SourceScope
+                if o.Address != nil </span><span class="cov8" title="1">{
+                        m["address"] = o.Address.String()
+                }</span>
+        case *dns.EDNS0_COOKIE:<span class="cov8" title="1">
+                m["cookie"] = strings.ToLower(o.Cookie)</span>
+        case *dns.EDNS0_UL:<span class="cov8" title="1">
+                m["lease"] = o.Lease
+                m["key_lease"] = o.KeyLease</span>
+        case *dns.EDNS0_LLQ:<span class="cov8" title="1">
+                m["version"] = o.Version
+                m["opcode"] = o.Opcode
+                m["error"] = o.Error
+                m["id"] = o.Id
+                m["lease_life"] = o.LeaseLife</span>
+        case *dns.EDNS0_DAU:<span class="cov8" title="1">
+                m["alg_codes"] = uint8SliceToIntSlice(o.AlgCode)</span>
+        case *dns.EDNS0_DHU:<span class="cov8" title="1">
+                m["alg_codes"] = uint8SliceToIntSlice(o.AlgCode)</span>
+        case *dns.EDNS0_N3U:<span class="cov8" title="1">
+                m["alg_codes"] = uint8SliceToIntSlice(o.AlgCode)</span>
+        case *dns.EDNS0_EXPIRE:<span class="cov8" title="1">
+                m["expire"] = o.Expire
+                if o.Empty </span><span class="cov0" title="0">{
+                        m["empty"] = true
+                }</span>
+        case *dns.EDNS0_LOCAL:<span class="cov8" title="1">
+                m["data"] = strings.ToLower(hex.EncodeToString(o.Data))</span>
+        case *dns.EDNS0_TCP_KEEPALIVE:<span class="cov8" title="1">
+                m["timeout"] = o.Timeout</span>
+        case *dns.EDNS0_PADDING:<span class="cov8" title="1">
+                m["padding"] = strings.ToLower(hex.EncodeToString(o.Padding))</span>
+        case *dns.EDNS0_EDE:<span class="cov8" title="1">
+                m["info_code"] = o.InfoCode
+                m["extra_text"] = o.ExtraText</span>
+        case *dns.EDNS0_ESU:<span class="cov8" title="1">
+                m["uri"] = o.Uri</span>
+        default:<span class="cov0" title="0"></span>
+                // No additional fields for unhandled option types.
+        }
+        <span class="cov8" title="1">return m</span>
+}
+
+func ednsOptionFromJSON(m map[string]any) (dns.EDNS0, error) <span class="cov8" title="1">{
+        codeStr := getString(m, "code")
+        if codeStr == "" </span><span class="cov0" title="0">{
+                return nil, errors.New("opt option missing code")
+        }</span>
+        <span class="cov8" title="1">code, err := stringToOptionCode(codeStr)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("opt option %s: %w", codeStr, err)
+        }</span>
+
+        <span class="cov8" title="1">switch code </span>{
+        case dns.EDNS0NSID:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_NSID{Code: code, Nsid: strings.ToLower(getString(m, "nsid"))}, nil</span>
+        case dns.EDNS0SUBNET:<span class="cov8" title="1">
+                opt := &amp;dns.EDNS0_SUBNET{
+                        Code:          code,
+                        Family:        getUint16(m, "family"),
+                        SourceNetmask: getUint8(m, "source_netmask"),
+                        SourceScope:   getUint8(m, "source_scope"),
+                }
+                if addr := getString(m, "address"); addr != "" </span><span class="cov8" title="1">{
+                        if ip := net.ParseIP(addr); ip != nil </span><span class="cov8" title="1">{
+                                opt.Address = ip
+                        }</span>
+                }
+                <span class="cov8" title="1">return opt, nil</span>
+        case dns.EDNS0COOKIE:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_COOKIE{Code: code, Cookie: strings.ToLower(getString(m, "cookie"))}, nil</span>
+        case dns.EDNS0UL:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_UL{Code: code, Lease: getUint32(m, "lease"), KeyLease: getUint32(m, "key_lease")}, nil</span>
+        case dns.EDNS0LLQ:<span class="cov8" title="1">
+                opt := &amp;dns.EDNS0_LLQ{
+                        Code:      code,
+                        Version:   getUint16(m, "version"),
+                        Opcode:    getUint16(m, "opcode"),
+                        Error:     getUint16(m, "error"),
+                        LeaseLife: getUint32(m, "lease_life"),
+                }
+                if raw, ok := m["id"]; ok </span><span class="cov8" title="1">{
+                        id, e := anyToUint64(raw)
+                        if e != nil </span><span class="cov0" title="0">{
+                                return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+                        }</span>
+                        <span class="cov8" title="1">opt.Id = id</span>
+                }
+                <span class="cov8" title="1">return opt, nil</span>
+        case dns.EDNS0DAU:<span class="cov8" title="1">
+                algs, e := getUint8Slice(m, "alg_codes")
+                if e != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+                }</span>
+                <span class="cov8" title="1">return &amp;dns.EDNS0_DAU{Code: code, AlgCode: algs}, nil</span>
+        case dns.EDNS0DHU:<span class="cov8" title="1">
+                algs, e := getUint8Slice(m, "alg_codes")
+                if e != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+                }</span>
+                <span class="cov8" title="1">return &amp;dns.EDNS0_DHU{Code: code, AlgCode: algs}, nil</span>
+        case dns.EDNS0N3U:<span class="cov8" title="1">
+                algs, e := getUint8Slice(m, "alg_codes")
+                if e != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+                }</span>
+                <span class="cov8" title="1">return &amp;dns.EDNS0_N3U{Code: code, AlgCode: algs}, nil</span>
+        case dns.EDNS0EXPIRE:<span class="cov8" title="1">
+                opt := &amp;dns.EDNS0_EXPIRE{Code: code, Expire: getUint32(m, "expire")}
+                if empty, ok := getBool(m, "empty"); ok </span><span class="cov0" title="0">{
+                        opt.Empty = empty
+                }</span>
+                <span class="cov8" title="1">return opt, nil</span>
+        case dns.EDNS0TCPKEEPALIVE:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_TCP_KEEPALIVE{Code: code, Timeout: getUint16(m, "timeout")}, nil</span>
+        case dns.EDNS0PADDING:<span class="cov8" title="1">
+                padding, e := hex.DecodeString(getString(m, "padding"))
+                if e != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+                }</span>
+                <span class="cov8" title="1">return &amp;dns.EDNS0_PADDING{Padding: padding}, nil</span>
+        case dns.EDNS0EDE:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_EDE{InfoCode: getUint16(m, "info_code"), ExtraText: getString(m, "extra_text")}, nil</span>
+        case dns.EDNS0ESU:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_ESU{Code: code, Uri: getString(m, "uri")}, nil</span>
+        }
+
+        <span class="cov8" title="1">data, err := hex.DecodeString(getString(m, "data"))
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("opt option %s: %w", codeStr, err)
+        }</span>
+        <span class="cov8" title="1">return &amp;dns.EDNS0_LOCAL{Code: code, Data: data}, nil</span>
 }
 
 func rrHdr(j RRJSON, t uint16, c uint16) dns.RR_Header <span class="cov8" title="1">{
@@ -558,6 +763,53 @@ func stringToClass(s string) (cls uint16, err error) <span class="cov8" title="1
                         cls = uint16(n)
                 }</span> else<span class="cov8" title="1"> {
                         err = &amp;unknownClassError{value: s}
+                }</span>
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+var optionCodeToName = map[uint16]string{
+        dns.EDNS0LLQ:          "LLQ",
+        dns.EDNS0UL:           "UL",
+        dns.EDNS0NSID:         "NSID",
+        dns.EDNS0DAU:          "DAU",
+        dns.EDNS0DHU:          "DHU",
+        dns.EDNS0N3U:          "N3U",
+        dns.EDNS0SUBNET:       "SUBNET",
+        dns.EDNS0EXPIRE:       "EXPIRE",
+        dns.EDNS0COOKIE:       "COOKIE",
+        dns.EDNS0TCPKEEPALIVE: "TCPKEEPALIVE",
+        dns.EDNS0PADDING:      "PADDING",
+        dns.EDNS0EDE:          "EDE",
+        dns.EDNS0ESU:          "ESU",
+}
+
+var optionNameToCode = func() map[string]uint16 <span class="cov8" title="1">{
+        out := make(map[string]uint16, len(optionCodeToName)+1)
+        for code, name := range optionCodeToName </span><span class="cov8" title="1">{
+                out[strings.ToUpper(name)] = code
+        }</span>
+        <span class="cov8" title="1">out["TCP_KEEPALIVE"] = dns.EDNS0TCPKEEPALIVE
+        return out</span>
+}()
+
+func optionCodeToString(code uint16) (s string) <span class="cov8" title="1">{
+        var ok bool
+        if s, ok = optionCodeToName[code]; !ok </span><span class="cov8" title="1">{
+                s = strconv.FormatUint(uint64(code), 10)
+        }</span>
+        <span class="cov8" title="1">return</span>
+}
+
+func stringToOptionCode(s string) (code uint16, err error) <span class="cov8" title="1">{
+        var ok bool
+        upper := strings.ToUpper(s)
+        if code, ok = optionNameToCode[upper]; !ok </span><span class="cov8" title="1">{
+                var n uint64
+                if n, err = strconv.ParseUint(s, 10, 16); err == nil </span><span class="cov8" title="1">{
+                        code = uint16(n)
+                }</span> else<span class="cov0" title="0"> {
+                        err = &amp;unknownOptionError{value: s}
                 }</span>
         }
         <span class="cov8" title="1">return</span>
@@ -637,6 +889,110 @@ func getStringSlice(m map[string]any, key string) (out []string, err error) <spa
         <span class="cov8" title="1">return</span>
 }
 
+func getBool(m map[string]any, key string) (bool, bool) <span class="cov8" title="1">{
+        if m != nil </span><span class="cov8" title="1">{
+                if v, ok := m[key]; ok </span><span class="cov8" title="1">{
+                        switch t := v.(type) </span>{
+                        case bool:<span class="cov8" title="1">
+                                return t, true</span>
+                        case string:<span class="cov0" title="0">
+                                if b, err := strconv.ParseBool(t); err == nil </span><span class="cov0" title="0">{
+                                        return b, true
+                                }</span>
+                        case float64:<span class="cov0" title="0">
+                                return t != 0, true</span>
+                        case json.Number:<span class="cov0" title="0">
+                                if n, err := t.Int64(); err == nil </span><span class="cov0" title="0">{
+                                        return n != 0, true
+                                }</span>
+                        }
+                }
+        }
+        <span class="cov8" title="1">return false, false</span>
+}
+
+func getUint8Slice(m map[string]any, key string) (out []uint8, err error) <span class="cov8" title="1">{
+        if m != nil </span><span class="cov8" title="1">{
+                if raw, ok := m[key]; ok </span><span class="cov8" title="1">{
+                        arr, ok := raw.([]any)
+                        if !ok </span><span class="cov0" title="0">{
+                                return nil, fmt.Errorf("%s must be array", key)
+                        }</span>
+                        <span class="cov8" title="1">for idx, v := range arr </span><span class="cov8" title="1">{
+                                val, e := anyToUint64(v)
+                                if e != nil </span><span class="cov0" title="0">{
+                                        return nil, fmt.Errorf("%s[%d]: %w", key, idx, e)
+                                }</span>
+                                <span class="cov8" title="1">if val &gt; math.MaxUint8 </span><span class="cov0" title="0">{
+                                        return nil, fmt.Errorf("%s[%d]: value out of range", key, idx)
+                                }</span>
+                                <span class="cov8" title="1">out = append(out, uint8(val))</span>
+                        }
+                }
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+func anyToUint64(v any) (uint64, error) <span class="cov8" title="1">{
+        switch t := v.(type) </span>{
+        case float64:<span class="cov8" title="1">
+                if t &lt; 0 </span><span class="cov0" title="0">{
+                        return 0, fmt.Errorf("negative value")
+                }</span>
+                <span class="cov8" title="1">return uint64(t), nil</span>
+        case json.Number:<span class="cov0" title="0">
+                if s := t.String(); s != "" </span><span class="cov0" title="0">{
+                        if n, err := strconv.ParseUint(s, 10, 64); err == nil </span><span class="cov0" title="0">{
+                                return n, nil
+                        }</span>
+                }
+                <span class="cov0" title="0">if n, err := t.Int64(); err == nil </span><span class="cov0" title="0">{
+                        if n &lt; 0 </span><span class="cov0" title="0">{
+                                return 0, fmt.Errorf("negative value")
+                        }</span>
+                        <span class="cov0" title="0">return uint64(n), nil</span>
+                }
+                <span class="cov0" title="0">return 0, fmt.Errorf("invalid number")</span>
+        case string:<span class="cov0" title="0">
+                if t == "" </span><span class="cov0" title="0">{
+                        return 0, nil
+                }</span>
+                <span class="cov0" title="0">n, err := strconv.ParseUint(t, 10, 64)
+                if err != nil </span><span class="cov0" title="0">{
+                        return 0, err
+                }</span>
+                <span class="cov0" title="0">return n, nil</span>
+        case int:<span class="cov0" title="0">
+                if t &lt; 0 </span><span class="cov0" title="0">{
+                        return 0, fmt.Errorf("negative value")
+                }</span>
+                <span class="cov0" title="0">return uint64(t), nil</span>
+        case int64:<span class="cov0" title="0">
+                if t &lt; 0 </span><span class="cov0" title="0">{
+                        return 0, fmt.Errorf("negative value")
+                }</span>
+                <span class="cov0" title="0">return uint64(t), nil</span>
+        case uint8:<span class="cov0" title="0">
+                return uint64(t), nil</span>
+        case uint16:<span class="cov0" title="0">
+                return uint64(t), nil</span>
+        case uint32:<span class="cov0" title="0">
+                return uint64(t), nil</span>
+        case uint64:<span class="cov0" title="0">
+                return t, nil</span>
+        default:<span class="cov0" title="0">
+                return 0, fmt.Errorf("invalid number type %T", v)</span>
+        }
+}
+
+func uint8SliceToIntSlice(in []uint8) []int <span class="cov8" title="1">{
+        out := make([]int, 0, len(in))
+        for _, v := range in </span><span class="cov8" title="1">{
+                out = append(out, int(v))
+        }</span>
+        <span class="cov8" title="1">return out</span>
+}
+
 type wrappedError struct {
         sentinel error
         err      error
@@ -683,6 +1039,14 @@ func (e *unknownClassError) Error() string <span class="cov8" title="1">{
 
 func (e *unknownClassError) Is(target error) bool <span class="cov8" title="1">{
         return target == ErrUnknownClass
+}</span>
+
+type unknownOptionError struct {
+        value string
+}
+
+func (e *unknownOptionError) Error() string <span class="cov0" title="0">{
+        return "unknown option code " + strconv.Quote(e.value)
 }</span>
 
 type stringSliceError struct {
