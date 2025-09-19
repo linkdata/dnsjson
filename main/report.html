@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (96.1%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (96.4%)</option>
 				
 				</select>
 			</div>
@@ -375,7 +375,7 @@ func rrToJSON(rr dns.RR) RRJSON <span class="cov8" title="1">{
                 j.Data["cert_data"] = v.Certificate</span>
         case *dns.OPT:<span class="cov8" title="1">
                 j.Data["udp_size"] = v.UDPSize()
-                j.Data["extended_rcode"] = uint8(v.ExtendedRcode() &gt;&gt; 4) // #nosec G115
+                j.Data["extended_rcode"] = uint16(v.ExtendedRcode()) // #nosec G115
                 j.Data["version"] = v.Version()
                 j.Data["do"] = v.Do()
                 j.Data["co"] = v.Co()
@@ -527,13 +527,13 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                                 }</span>
                         case dns.TypeOPT:<span class="cov8" title="1">
                                 opt := &amp;dns.OPT{Hdr: rrHdr(j, typeCode, classCode)}
+                                udp_size := classCode
                                 if _, ok := j.Data["udp_size"]; ok </span><span class="cov8" title="1">{
-                                        opt.SetUDPSize(getUint16(j.Data, "udp_size"))
-                                }</span> else<span class="cov0" title="0"> {
-                                        opt.SetUDPSize(classCode)
+                                        udp_size = getUint16(j.Data, "udp_size")
                                 }</span>
-                                <span class="cov8" title="1">if _, ok := j.Data["extended_rcode"]; ok </span><span class="cov8" title="1">{
-                                        opt.SetExtendedRcode(uint16(getUint8(j.Data, "extended_rcode")) &lt;&lt; 4)
+                                <span class="cov8" title="1">opt.SetUDPSize(udp_size)
+                                if _, ok := j.Data["extended_rcode"]; ok </span><span class="cov8" title="1">{
+                                        opt.SetExtendedRcode(getUint16(j.Data, "extended_rcode"))
                                 }</span>
                                 <span class="cov8" title="1">if _, ok := j.Data["version"]; ok </span><span class="cov8" title="1">{
                                         opt.SetVersion(getUint8(j.Data, "version"))
