@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (92.4%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (96.1%)</option>
 				
 				</select>
 			</div>
@@ -814,7 +814,7 @@ func stringToOptionCode(s string) (code uint16, err error) <span class="cov8" ti
                 var n uint64
                 if n, err = strconv.ParseUint(s, 10, 16); err == nil </span><span class="cov8" title="1">{
                         code = uint16(n)
-                }</span> else<span class="cov0" title="0"> {
+                }</span> else<span class="cov8" title="1"> {
                         err = &amp;unknownOptionError{value: s}
                 }</span>
         }
@@ -1043,7 +1043,7 @@ type unknownOptionError struct {
         value string
 }
 
-func (e *unknownOptionError) Error() string <span class="cov0" title="0">{
+func (e *unknownOptionError) Error() string <span class="cov8" title="1">{
         return "unknown option code " + strconv.Quote(e.value)
 }</span>
 
@@ -1063,11 +1063,11 @@ type optOptionEntryError struct {
         index int
 }
 
-func (e *optOptionEntryError) Error() string <span class="cov0" title="0">{
+func (e *optOptionEntryError) Error() string <span class="cov8" title="1">{
         return "opt options[" + strconv.Itoa(e.index) + "] must be object"
 }</span>
 
-func (e *optOptionEntryError) Is(target error) bool <span class="cov0" title="0">{
+func (e *optOptionEntryError) Is(target error) bool <span class="cov8" title="1">{
         return target == ErrEDNSOptionEntry
 }</span>
 
@@ -1076,18 +1076,18 @@ type optOptionCodeError struct {
         err  error
 }
 
-func (e *optOptionCodeError) Error() string <span class="cov0" title="0">{
-        if e.err == nil </span><span class="cov0" title="0">{
+func (e *optOptionCodeError) Error() string <span class="cov8" title="1">{
+        if e.err == nil </span><span class="cov8" title="1">{
                 return "opt option " + e.code
         }</span>
-        <span class="cov0" title="0">return "opt option " + e.code + ": " + e.err.Error()</span>
+        <span class="cov8" title="1">return "opt option " + e.code + ": " + e.err.Error()</span>
 }
 
-func (e *optOptionCodeError) Unwrap() error <span class="cov0" title="0">{
+func (e *optOptionCodeError) Unwrap() error <span class="cov8" title="1">{
         return e.err
 }</span>
 
-func (e *optOptionCodeError) Is(target error) bool <span class="cov0" title="0">{
+func (e *optOptionCodeError) Is(target error) bool <span class="cov8" title="1">{
         return target == ErrEDNSOption || errors.Is(e.err, target)
 }</span>
 
@@ -1095,7 +1095,7 @@ type keyArrayError struct {
         key string
 }
 
-func (e *keyArrayError) Error() string <span class="cov0" title="0">{
+func (e *keyArrayError) Error() string <span class="cov8" title="1">{
         return e.key + " must be array"
 }</span>
 
@@ -1109,14 +1109,14 @@ type keyIndexError struct {
         err   error
 }
 
-func (e *keyIndexError) Error() string <span class="cov0" title="0">{
-        if e.err == nil </span><span class="cov0" title="0">{
+func (e *keyIndexError) Error() string <span class="cov8" title="1">{
+        if e.err == nil </span><span class="cov8" title="1">{
                 return e.key + "[" + strconv.Itoa(e.index) + "]"
         }</span>
-        <span class="cov0" title="0">return e.key + "[" + strconv.Itoa(e.index) + "]: " + e.err.Error()</span>
+        <span class="cov8" title="1">return e.key + "[" + strconv.Itoa(e.index) + "]: " + e.err.Error()</span>
 }
 
-func (e *keyIndexError) Unwrap() error <span class="cov0" title="0">{
+func (e *keyIndexError) Unwrap() error <span class="cov8" title="1">{
         return e.err
 }</span>
 
@@ -1129,7 +1129,7 @@ type keyIndexRangeError struct {
         index int
 }
 
-func (e *keyIndexRangeError) Error() string <span class="cov0" title="0">{
+func (e *keyIndexRangeError) Error() string <span class="cov8" title="1">{
         return e.key + "[" + strconv.Itoa(e.index) + "]: value out of range"
 }</span>
 
