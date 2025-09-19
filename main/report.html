@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (99.3%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (99.8%)</option>
 				
 				</select>
 			</div>
@@ -558,7 +558,7 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                                                                 }</span> else<span class="cov0" title="0"> {
                                                                         err = errors.Join(err, &amp;optOptionEntryError{index: idx})
                                                                 }</span>
-                                                        } else<span class="cov0" title="0"> {
+                                                        } else<span class="cov8" title="1"> {
                                                                 err = errors.Join(err, &amp;optOptionEntryError{index: idx})
                                                         }</span>
                                                 }
@@ -714,7 +714,7 @@ func ednsOptionFromJSON(m map[string]any) (rr dns.EDNS0, err error) <span class=
                                         rr = &amp;dns.EDNS0_LOCAL{Code: code, Data: data}
                                 }</span>
                         }
-                        <span class="cov8" title="1">if err != nil </span><span class="cov0" title="0">{
+                        <span class="cov8" title="1">if err != nil </span><span class="cov8" title="1">{
                                 err = &amp;optOptionCodeError{code: codeStr, err: err}
                         }</span>
                 }
