@@ -481,12 +481,9 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 					if arr, ok := raw.([]any); ok {
 						err = nil
 						for idx, entry := range arr {
-							if optMap, ok := entry.(map[string]any); ok {
-								if option, e := ednsOptionFromJSON(optMap); e == nil {
-									opt.Option = append(opt.Option, option)
-								} else {
-									err = errors.Join(err, &optOptionEntryError{index: idx})
-								}
+							var option dns.EDNS0
+							if option, err = ednsOptionFromJSON(entry); err == nil {
+								opt.Option = append(opt.Option, option)
 							} else {
 								err = errors.Join(err, &optOptionEntryError{index: idx})
 							}
@@ -564,87 +561,89 @@ func ednsOptionToJSON(opt dns.EDNS0) map[string]any {
 	return m
 }
 
-func ednsOptionFromJSON(m map[string]any) (rr dns.EDNS0, err error) {
+func ednsOptionFromJSON(in any) (rr dns.EDNS0, err error) {
 	err = ErrEDNSOptionNoCode
-	if codeStr := getString(m, "code"); codeStr != "" {
-		var code uint16
-		if code, err = stringToOptionCode(codeStr); err == nil {
-			switch code {
-			case dns.EDNS0NSID:
-				rr = &dns.EDNS0_NSID{Code: code, Nsid: strings.ToLower(getString(m, "nsid"))}
-			case dns.EDNS0SUBNET:
-				var address net.IP
-				if addr := getString(m, "address"); addr != "" {
-					var ip netip.Addr
-					if ip, err = netip.ParseAddr(addr); err == nil {
-						address = ip.AsSlice()
+	if m, ok := in.(map[string]any); ok {
+		if codeStr := getString(m, "code"); codeStr != "" {
+			var code uint16
+			if code, err = stringToOptionCode(codeStr); err == nil {
+				switch code {
+				case dns.EDNS0NSID:
+					rr = &dns.EDNS0_NSID{Code: code, Nsid: strings.ToLower(getString(m, "nsid"))}
+				case dns.EDNS0SUBNET:
+					var address net.IP
+					if addr := getString(m, "address"); addr != "" {
+						var ip netip.Addr
+						if ip, err = netip.ParseAddr(addr); err == nil {
+							address = ip.AsSlice()
+						}
+					}
+					if err == nil {
+						rr = &dns.EDNS0_SUBNET{
+							Code:          code,
+							Family:        getUint16(m, "family"),
+							SourceNetmask: getUint8(m, "source_netmask"),
+							SourceScope:   getUint8(m, "source_scope"),
+							Address:       address,
+						}
+					}
+				case dns.EDNS0COOKIE:
+					rr = &dns.EDNS0_COOKIE{Code: code, Cookie: strings.ToLower(getString(m, "cookie"))}
+				case dns.EDNS0UL:
+					rr = &dns.EDNS0_UL{Code: code, Lease: getUint32(m, "lease"), KeyLease: getUint32(m, "key_lease")}
+				case dns.EDNS0LLQ:
+					var id uint64
+					if raw, ok := m["id"]; ok {
+						id, err = anyToUint64(raw)
+					}
+					if err == nil {
+						rr = &dns.EDNS0_LLQ{
+							Id:        id,
+							Code:      code,
+							Version:   getUint16(m, "version"),
+							Opcode:    getUint16(m, "opcode"),
+							Error:     getUint16(m, "error"),
+							LeaseLife: getUint32(m, "lease_life"),
+						}
+					}
+				case dns.EDNS0DAU:
+					var algs []uint8
+					if algs, err = getUint8Slice(m, "alg_codes"); err == nil {
+						rr = &dns.EDNS0_DAU{Code: code, AlgCode: algs}
+					}
+				case dns.EDNS0DHU:
+					var algs []uint8
+					if algs, err = getUint8Slice(m, "alg_codes"); err == nil {
+						rr = &dns.EDNS0_DHU{Code: code, AlgCode: algs}
+					}
+				case dns.EDNS0N3U:
+					var algs []uint8
+					if algs, err = getUint8Slice(m, "alg_codes"); err == nil {
+						rr = &dns.EDNS0_N3U{Code: code, AlgCode: algs}
+					}
+				case dns.EDNS0EXPIRE:
+					empty, _ := getBool(m, "empty")
+					rr = &dns.EDNS0_EXPIRE{Code: code, Expire: getUint32(m, "expire"), Empty: empty}
+				case dns.EDNS0TCPKEEPALIVE:
+					rr = &dns.EDNS0_TCP_KEEPALIVE{Code: code, Timeout: getUint16(m, "timeout")}
+				case dns.EDNS0PADDING:
+					var padding []byte
+					if padding, err = hex.DecodeString(getString(m, "padding")); err == nil {
+						rr = &dns.EDNS0_PADDING{Padding: padding}
+					}
+				case dns.EDNS0EDE:
+					rr = &dns.EDNS0_EDE{InfoCode: getUint16(m, "info_code"), ExtraText: getString(m, "extra_text")}
+				case dns.EDNS0ESU:
+					rr = &dns.EDNS0_ESU{Code: code, Uri: getString(m, "uri")}
+				default:
+					var data []byte
+					if data, err = hex.DecodeString(getString(m, "data")); err == nil {
+						rr = &dns.EDNS0_LOCAL{Code: code, Data: data}
 					}
 				}
-				if err == nil {
-					rr = &dns.EDNS0_SUBNET{
-						Code:          code,
-						Family:        getUint16(m, "family"),
-						SourceNetmask: getUint8(m, "source_netmask"),
-						SourceScope:   getUint8(m, "source_scope"),
-						Address:       address,
-					}
+				if err != nil {
+					err = &optOptionCodeError{code: codeStr, err: err}
 				}
-			case dns.EDNS0COOKIE:
-				rr = &dns.EDNS0_COOKIE{Code: code, Cookie: strings.ToLower(getString(m, "cookie"))}
-			case dns.EDNS0UL:
-				rr = &dns.EDNS0_UL{Code: code, Lease: getUint32(m, "lease"), KeyLease: getUint32(m, "key_lease")}
-			case dns.EDNS0LLQ:
-				var id uint64
-				if raw, ok := m["id"]; ok {
-					id, err = anyToUint64(raw)
-				}
-				if err == nil {
-					rr = &dns.EDNS0_LLQ{
-						Id:        id,
-						Code:      code,
-						Version:   getUint16(m, "version"),
-						Opcode:    getUint16(m, "opcode"),
-						Error:     getUint16(m, "error"),
-						LeaseLife: getUint32(m, "lease_life"),
-					}
-				}
-			case dns.EDNS0DAU:
-				var algs []uint8
-				if algs, err = getUint8Slice(m, "alg_codes"); err == nil {
-					rr = &dns.EDNS0_DAU{Code: code, AlgCode: algs}
-				}
-			case dns.EDNS0DHU:
-				var algs []uint8
-				if algs, err = getUint8Slice(m, "alg_codes"); err == nil {
-					rr = &dns.EDNS0_DHU{Code: code, AlgCode: algs}
-				}
-			case dns.EDNS0N3U:
-				var algs []uint8
-				if algs, err = getUint8Slice(m, "alg_codes"); err == nil {
-					rr = &dns.EDNS0_N3U{Code: code, AlgCode: algs}
-				}
-			case dns.EDNS0EXPIRE:
-				empty, _ := getBool(m, "empty")
-				rr = &dns.EDNS0_EXPIRE{Code: code, Expire: getUint32(m, "expire"), Empty: empty}
-			case dns.EDNS0TCPKEEPALIVE:
-				rr = &dns.EDNS0_TCP_KEEPALIVE{Code: code, Timeout: getUint16(m, "timeout")}
-			case dns.EDNS0PADDING:
-				var padding []byte
-				if padding, err = hex.DecodeString(getString(m, "padding")); err == nil {
-					rr = &dns.EDNS0_PADDING{Padding: padding}
-				}
-			case dns.EDNS0EDE:
-				rr = &dns.EDNS0_EDE{InfoCode: getUint16(m, "info_code"), ExtraText: getString(m, "extra_text")}
-			case dns.EDNS0ESU:
-				rr = &dns.EDNS0_ESU{Code: code, Uri: getString(m, "uri")}
-			default:
-				var data []byte
-				if data, err = hex.DecodeString(getString(m, "data")); err == nil {
-					rr = &dns.EDNS0_LOCAL{Code: code, Data: data}
-				}
-			}
-			if err != nil {
-				err = &optOptionCodeError{code: codeStr, err: err}
 			}
 		}
 	}
