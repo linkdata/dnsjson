@@ -50,7 +50,6 @@ import (
 	"math"
 	"net"
 	"net/netip"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -740,8 +739,7 @@ func optionCodeToString(code uint16) (s string) {
 
 func stringToOptionCode(s string) (code uint16, err error) {
 	var ok bool
-	upper := strings.ToUpper(s)
-	if code, ok = optionNameToCode[upper]; !ok {
+	if code, ok = optionNameToCode[strings.ToUpper(s)]; !ok {
 		var n uint64
 		if n, err = strconv.ParseUint(s, 10, 16); err == nil {
 			code = uint16(n)
@@ -870,56 +868,48 @@ func getUint8Slice(m map[string]any, key string) (out []uint8, err error) {
 	return
 }
 
-func anyToUint64(v any) (uint64, error) {
+func anyToUint64(v any) (n uint64, err error) {
 	switch t := v.(type) {
 	case float64:
 		if t < 0 {
 			return 0, ErrNegativeValue
 		}
-		return uint64(t), nil
+		n = uint64(t)
 	case json.Number:
-		if s := t.String(); s != "" {
-			if n, err := strconv.ParseUint(s, 10, 64); err == nil {
-				return n, nil
+		var val int64
+		if val, err = t.Int64(); err == nil {
+			if val < 0 {
+				err = ErrNegativeValue
+			} else {
+				n = uint64(val)
 			}
 		}
-		if n, err := t.Int64(); err == nil {
-			if n < 0 {
-				return 0, ErrNegativeValue
-			}
-			return uint64(n), nil
-		}
-		return 0, ErrInvalidNumber
 	case string:
-		if t == "" {
-			return 0, nil
+		if t != "" {
+			n, err = strconv.ParseUint(t, 10, 64)
 		}
-		n, err := strconv.ParseUint(t, 10, 64)
-		if err != nil {
-			return 0, err
-		}
-		return n, nil
 	case int:
 		if t < 0 {
 			return 0, ErrNegativeValue
 		}
-		return uint64(t), nil
+		n = uint64(t)
 	case int64:
 		if t < 0 {
 			return 0, ErrNegativeValue
 		}
-		return uint64(t), nil
+		n = uint64(t)
 	case uint8:
-		return uint64(t), nil
+		n = uint64(t)
 	case uint16:
-		return uint64(t), nil
+		n = uint64(t)
 	case uint32:
-		return uint64(t), nil
+		n = uint64(t)
 	case uint64:
-		return t, nil
+		n = t
 	default:
-		return 0, &invalidNumberTypeError{value: v}
+		err = ErrInvalidNumberType
 	}
+	return
 }
 
 func uint8SliceToIntSlice(in []uint8) []int {
@@ -1074,20 +1064,4 @@ func (e *keyIndexRangeError) Error() string {
 
 func (e *keyIndexRangeError) Is(target error) bool {
 	return target == ErrUint8SliceRange
-}
-
-type invalidNumberTypeError struct {
-	value any
-}
-
-func (e *invalidNumberTypeError) Error() string {
-	typeName := "<nil>"
-	if e.value != nil {
-		typeName = reflect.TypeOf(e.value).String()
-	}
-	return "invalid number type " + typeName
-}
-
-func (e *invalidNumberTypeError) Is(target error) bool {
-	return target == ErrInvalidNumberType
 }
