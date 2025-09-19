@@ -62,25 +62,27 @@ var _ json.Marshaler = &Msg{}
 var _ json.Unmarshaler = &Msg{}
 
 var (
-	ErrEmptyInput         = errors.New("empty input")
-	ErrInvalidJSON        = errors.New("invalid JSON")
-	ErrInvalidMessage     = errors.New("invalid message")
-	ErrQuestionQType      = errors.New("question qtype")
-	ErrQuestionQClass     = errors.New("question qclass")
-	ErrAnswerSection      = errors.New("answer")
-	ErrNsSection          = errors.New("ns")
-	ErrExtraSection       = errors.New("extra")
-	ErrUnknownType        = errors.New("unknown type")
-	ErrUnknownClass       = errors.New("unknown class")
-	ErrInvalidStringSlice = errors.New("invalid string slice")
-	ErrEDNSOptionEntry    = errors.New("edns option entry type")
-	ErrEDNSOption         = errors.New("edns option")
-	ErrUint8SliceType     = errors.New("uint8 slice type")
-	ErrUint8SliceElement  = errors.New("uint8 slice element")
-	ErrUint8SliceRange    = errors.New("uint8 slice range")
-	ErrNegativeValue      = errors.New("negative value")
-	ErrInvalidNumber      = errors.New("invalid number")
-	ErrInvalidNumberType  = errors.New("invalid number type")
+	ErrEmptyInput          = errors.New("empty input")
+	ErrInvalidJSON         = errors.New("invalid JSON")
+	ErrInvalidMessage      = errors.New("invalid message")
+	ErrQuestionQType       = errors.New("question qtype")
+	ErrQuestionQClass      = errors.New("question qclass")
+	ErrAnswerSection       = errors.New("answer")
+	ErrNsSection           = errors.New("ns")
+	ErrExtraSection        = errors.New("extra")
+	ErrUnknownType         = errors.New("unknown type")
+	ErrUnknownClass        = errors.New("unknown class")
+	ErrInvalidStringSlice  = errors.New("invalid string slice")
+	ErrEDNSOptionEntry     = errors.New("edns option entry type")
+	ErrEDNSOption          = errors.New("edns option")
+	ErrEDNSOptionsNotArray = errors.New("opt options must be array")
+	ErrEDNSOptionNoCode    = errors.New("opt option missing code")
+	ErrUint8SliceType      = errors.New("uint8 slice type")
+	ErrUint8SliceElement   = errors.New("uint8 slice element")
+	ErrUint8SliceRange     = errors.New("uint8 slice range")
+	ErrNegativeValue       = errors.New("negative value")
+	ErrInvalidNumber       = errors.New("invalid number")
+	ErrInvalidNumberType   = errors.New("invalid number type")
 )
 
 // MessageJSON is the top-level JSON shape for dns.Msg.
@@ -477,7 +479,7 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 				if raw, ok := j.Data["options"]; ok {
 					arr, ok := raw.([]any)
 					if !ok {
-						err = errors.Join(err, errors.New("opt options must be array"))
+						err = errors.Join(err, ErrEDNSOptionsNotArray)
 					} else {
 						for idx, entry := range arr {
 							optMap, ok := entry.(map[string]any)
@@ -568,7 +570,7 @@ func ednsOptionToJSON(opt dns.EDNS0) map[string]any {
 func ednsOptionFromJSON(m map[string]any) (dns.EDNS0, error) {
 	codeStr := getString(m, "code")
 	if codeStr == "" {
-		return nil, errors.New("opt option missing code")
+		return nil, ErrEDNSOptionNoCode
 	}
 	code, err := stringToOptionCode(codeStr)
 	if err != nil {
