@@ -173,6 +173,119 @@ func TestGetStringSlice(t *testing.T) {
 	}
 }
 
+func TestGetUint8Slice(t *testing.T) {
+	m := map[string]any{
+		"algs": []any{float64(1), json.Number("2"), uint8(3)},
+	}
+
+	got, err := getUint8Slice(m, "algs")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []uint8{1, 2, 3}
+	if len(got) != len(want) {
+		t.Fatalf("length mismatch: got %d want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("value mismatch at %d: got %d want %d", i, got[i], want[i])
+		}
+	}
+
+	if _, err := getUint8Slice(map[string]any{"algs": "not-an-array"}, "algs"); !errors.Is(err, ErrUint8SliceType) {
+		t.Fatalf("expected ErrUint8SliceType, got %v", err)
+	}
+
+	if _, err := getUint8Slice(map[string]any{"algs": []any{true}}, "algs"); !errors.Is(err, ErrInvalidNumberType) {
+		t.Fatalf("expected ErrInvalidNumberType, got %v", err)
+	}
+
+	if _, err := getUint8Slice(map[string]any{"algs": []any{float64(-1)}}, "algs"); !errors.Is(err, ErrNegativeValue) {
+		t.Fatalf("expected ErrNegativeValue, got %v", err)
+	}
+
+	if _, err := getUint8Slice(map[string]any{"algs": []any{float64(300)}}, "algs"); !errors.Is(err, ErrUint8SliceRange) {
+		t.Fatalf("expected ErrUint8SliceRange, got %v", err)
+	}
+}
+
+func TestAnyToUint64(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   any
+		want    uint64
+		wantErr error
+	}{
+		{name: "float", input: float64(42.5), want: 42},
+		{name: "negative float", input: float64(-1), wantErr: ErrNegativeValue},
+		{name: "json number", input: json.Number("10"), want: 10},
+		{name: "invalid json number", input: json.Number("not-a-number"), wantErr: ErrInvalidNumber},
+		{name: "string", input: "123", want: 123},
+		{name: "negative int", input: int(-5), wantErr: ErrNegativeValue},
+		{name: "invalid type", input: true, wantErr: ErrInvalidNumberType},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := anyToUint64(tc.input)
+			if tc.wantErr != nil {
+				if err == nil {
+					t.Fatalf("expected error %v, got nil", tc.wantErr)
+				}
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("anyToUint64(%v) = %d, want %d", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGetBool(t *testing.T) {
+	m := map[string]any{
+		"bool":         true,
+		"string":       "true",
+		"stringBad":    "nope",
+		"floatZero":    float64(0),
+		"float":        float64(2),
+		"jsonZero":     json.Number("0"),
+		"jsonPositive": json.Number("5"),
+	}
+
+	tests := []struct {
+		name string
+		key  string
+		want bool
+		ok   bool
+	}{
+		{name: "bool", key: "bool", want: true, ok: true},
+		{name: "string", key: "string", want: true, ok: true},
+		{name: "string invalid", key: "stringBad", want: false, ok: false},
+		{name: "float zero", key: "floatZero", want: false, ok: true},
+		{name: "float positive", key: "float", want: true, ok: true},
+		{name: "json zero", key: "jsonZero", want: false, ok: true},
+		{name: "json positive", key: "jsonPositive", want: true, ok: true},
+		{name: "missing", key: "missing", want: false, ok: false},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := getBool(m, tc.key)
+			if got != tc.want || ok != tc.ok {
+				t.Fatalf("getBool(%q) = (%v, %v), want (%v, %v)", tc.key, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
+
 func TestRRFromJSONFallback(t *testing.T) {
 	rr, err := rrFromJSON(RRJSON{
 		Name:  "fallback.example.",
