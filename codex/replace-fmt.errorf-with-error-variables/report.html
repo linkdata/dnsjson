@@ -1,0 +1,1196 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>dnsjson: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (88.9%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">// Package dnsjson provides JSON marshalling/unmarshalling helpers for github.com/miekg/dns *dns.Msg
+// using an explicit, human-readable JSON schema (no wire-format fields).
+//
+// Schema overview (stable keys; rdata keys per RR type listed below):
+// {
+//   "id": 1234,
+//   "msgHdr": {"qr":true, "opcode":"QUERY", "aa":false, "tc":false, "rd":true,
+//               "ra":true, "z":0, "ad":false, "cd":false, "rcode":"NOERROR"},
+//   "question": [{"name":"example.com.", "qtype":"A", "qclass":"IN"}],
+//   "answer":  [ RRJSON, ... ],
+//   "ns":      [ RRJSON, ... ],
+//   "extra":   [ RRJSON, ... ]
+// }
+//
+// RRJSON (common fields) + per-type data (examples):
+// {
+//   "name":"example.com.", "type":"A", "class":"IN", "ttl":300,
+//   "data": { "a":"93.184.216.34" }
+// }
+// AAAA: {"aaaa":"2001:db8::1"}
+// CNAME: {"target":"alias.example."}
+// NS: {"ns":"ns1.example."}
+// PTR: {"ptr":"host.example."}
+// TXT: {"txt":["chunk1","chunk2"]}
+// MX: {"preference":10, "mx":"mail.example."}
+// SRV: {"priority":0, "weight":5, "port":443, "target":"svc.example."}
+// SOA: {"ns":"ns1.", "mbox":"hostmaster.", "serial":1, "refresh":7200, "retry":900, "expire":1209600, "minttl":300}
+// CAA: {"flag":0, "tag":"issue", "value":"letsencrypt.org"}
+// NAPTR: {"order":100, "preference":50, "flags":"s", "services":"SIP+D2U", "regexp":"", "replacement":"_sip._udp.example."}
+// DS: {"key_tag":12345, "algorithm":8, "digest_type":2, "digest":"...hex..."}
+// DNSKEY: {"flags":257, "protocol":3, "algorithm":8, "public_key":"base64..."}
+// RRSIG: {"type_covered":"A", "algorithm":8, "labels":2, "original_ttl":300,
+//         "expiration": 1735689600, "inception": 1733097600, "key_tag":12345,
+//         "signer_name":"example.", "signature":"base64..."}
+// TLSA: {"usage":3, "selector":1, "matching_type":1, "cert_data":"hex or base64"}
+//
+// Notes
+//  - Type/class use standard mnemonics (e.g., "A", "AAAA", "IN").
+//  - Unknown/less-common RR types are round-tripped via a best-effort map in "data"; if a
+//    type is not implemented below, Marshal will include {"raw": "&lt;presentation&gt;"} and
+//    Unmarshal will parse it using dns.NewRR on a synthesized presentation string.
+//  - Times in RRSIG use UNIX seconds per miekg/dns conventions.
+
+package dnsjson
+
+import (
+        "encoding/hex"
+        "encoding/json"
+        "errors"
+        "math"
+        "net"
+        "net/netip"
+        "reflect"
+        "strconv"
+        "strings"
+
+        "github.com/miekg/dns"
+)
+
+type Msg dns.Msg
+
+var _ json.Marshaler = &amp;Msg{}
+var _ json.Unmarshaler = &amp;Msg{}
+
+var (
+        ErrEmptyInput         = errors.New("empty input")
+        ErrInvalidJSON        = errors.New("invalid JSON")
+        ErrInvalidMessage     = errors.New("invalid message")
+        ErrQuestionQType      = errors.New("question qtype")
+        ErrQuestionQClass     = errors.New("question qclass")
+        ErrAnswerSection      = errors.New("answer")
+        ErrNsSection          = errors.New("ns")
+        ErrExtraSection       = errors.New("extra")
+        ErrUnknownType        = errors.New("unknown type")
+        ErrUnknownClass       = errors.New("unknown class")
+        ErrInvalidStringSlice = errors.New("invalid string slice")
+        ErrEDNSOptionEntry    = errors.New("edns option entry type")
+        ErrEDNSOption         = errors.New("edns option")
+        ErrUint8SliceType     = errors.New("uint8 slice type")
+        ErrUint8SliceElement  = errors.New("uint8 slice element")
+        ErrUint8SliceRange    = errors.New("uint8 slice range")
+        ErrNegativeValue      = errors.New("negative value")
+        ErrInvalidNumber      = errors.New("invalid number")
+        ErrInvalidNumberType  = errors.New("invalid number type")
+)
+
+// MessageJSON is the top-level JSON shape for dns.Msg.
+type MessageJSON struct {
+        ID       uint16         `json:"id"`
+        MsgHdr   MsgHdrJSON     `json:"msgHdr"`
+        Question []QuestionJSON `json:"question"`
+        Answer   []RRJSON       `json:"answer,omitempty"`
+        Ns       []RRJSON       `json:"ns,omitempty"`
+        Extra    []RRJSON       `json:"extra,omitempty"`
+}
+
+type MsgHdrJSON struct {
+        QR     bool   `json:"qr,omitempty"`
+        Opcode string `json:"opcode"`
+        AA     bool   `json:"aa,omitempty"`
+        TC     bool   `json:"tc,omitempty"`
+        RD     bool   `json:"rd,omitempty"`
+        RA     bool   `json:"ra,omitempty"`
+        Z      bool   `json:"z,omitempty"`
+        AD     bool   `json:"ad,omitempty"`
+        CD     bool   `json:"cd,omitempty"`
+        Rcode  string `json:"rcode"`
+}
+
+type QuestionJSON struct {
+        Name   string `json:"name"`
+        Qtype  string `json:"qtype"`
+        Qclass string `json:"qclass"`
+}
+
+// RRJSON contains common RR header fields plus a per-type data map.
+type RRJSON struct {
+        Name  string         `json:"name"`
+        Type  string         `json:"type"`
+        Class string         `json:"class"`
+        TTL   uint32         `json:"ttl"`
+        Data  map[string]any `json:"data"`
+}
+
+func (m *Msg) MarshalJSON() (b []byte, err error) <span class="cov8" title="1">{
+        b = []byte("null")
+        if m != nil </span><span class="cov8" title="1">{
+                j := MessageJSON{
+                        ID:     m.Id,
+                        MsgHdr: hdrToJSON(m.MsgHdr),
+                        Answer: rrsToJSON(m.Answer),
+                        Ns:     rrsToJSON(m.Ns),
+                        Extra:  rrsToJSON(m.Extra),
+                }
+                // Questions
+                for _, q := range m.Question </span><span class="cov8" title="1">{
+                        j.Question = append(j.Question, QuestionJSON{
+                                Name:   q.Name,
+                                Qtype:  typeToString(q.Qtype),
+                                Qclass: classToString(q.Qclass),
+                        })
+                }</span>
+                <span class="cov8" title="1">b, err = json.Marshal(j)</span>
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+func (msg *Msg) UnmarshalJSON(data []byte) (err error) <span class="cov8" title="1">{
+        err = ErrEmptyInput
+        if len(data) &gt; 0 </span><span class="cov8" title="1">{
+                var raw json.RawMessage
+                if err = wrapError(ErrInvalidJSON, json.Unmarshal(data, &amp;raw)); err == nil </span><span class="cov8" title="1">{
+                        if string(raw) != "null" </span><span class="cov8" title="1">{
+                                var j MessageJSON
+                                if err = wrapError(ErrInvalidMessage, json.Unmarshal(raw, &amp;j)); err == nil </span><span class="cov8" title="1">{
+                                        msg.MsgHdr = hdrFromJSON(j.MsgHdr)
+                                        msg.Id = j.ID
+                                        // Questions
+                                        for _, qj := range j.Question </span><span class="cov8" title="1">{
+                                                qt, e := stringToType(qj.Qtype)
+                                                err = errors.Join(err, wrapError(ErrQuestionQType, e))
+                                                qc, e := stringToClass(qj.Qclass)
+                                                err = errors.Join(err, wrapError(ErrQuestionQClass, e))
+                                                msg.Question = append(msg.Question, dns.Question{Name: qj.Name, Qtype: qt, Qclass: qc})
+                                        }</span>
+                                        // Sections
+                                        <span class="cov8" title="1">var e error
+                                        msg.Answer, e = rrsFromJSON(j.Answer)
+                                        err = errors.Join(err, wrapError(ErrAnswerSection, e))
+                                        msg.Ns, e = rrsFromJSON(j.Ns)
+                                        err = errors.Join(err, wrapError(ErrNsSection, e))
+                                        msg.Extra, e = rrsFromJSON(j.Extra)
+                                        err = errors.Join(err, wrapError(ErrExtraSection, e))</span>
+                                }
+                        }
+                }
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+// --- helpers ---
+
+func hdrToJSON(h dns.MsgHdr) MsgHdrJSON <span class="cov8" title="1">{
+        return MsgHdrJSON{
+                QR:     h.Response,
+                Opcode: dns.OpcodeToString[h.Opcode],
+                AA:     h.Authoritative,
+                TC:     h.Truncated,
+                RD:     h.RecursionDesired,
+                RA:     h.RecursionAvailable,
+                Z:      h.Zero,
+                AD:     h.AuthenticatedData,
+                CD:     h.CheckingDisabled,
+                Rcode:  dns.RcodeToString[h.Rcode],
+        }
+}</span>
+
+func hdrFromJSON(j MsgHdrJSON) (mh dns.MsgHdr) <span class="cov8" title="1">{
+        mh.Response = j.QR
+        mh.Opcode = stringToOpcode(j.Opcode)
+        mh.Authoritative = j.AA
+        mh.Truncated = j.TC
+        mh.RecursionDesired = j.RD
+        mh.RecursionAvailable = j.RA
+        mh.Zero = j.Z
+        mh.AuthenticatedData = j.AD
+        mh.CheckingDisabled = j.CD
+        mh.Rcode = stringToRcode(j.Rcode)
+        return
+}</span>
+
+func rrsToJSON(rrs []dns.RR) (out []RRJSON) <span class="cov8" title="1">{
+        for _, rr := range rrs </span><span class="cov8" title="1">{
+                out = append(out, rrToJSON(rr))
+        }</span>
+        <span class="cov8" title="1">return</span>
+}
+
+func rrsFromJSON(rrjs []RRJSON) (out []dns.RR, err error) <span class="cov8" title="1">{
+        for _, j := range rrjs </span><span class="cov8" title="1">{
+                if rr, e := rrFromJSON(j); e == nil </span><span class="cov8" title="1">{
+                        out = append(out, rr)
+                }</span> else<span class="cov8" title="1"> {
+                        err = errors.Join(err, e)
+                }</span>
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+func rrToJSON(rr dns.RR) RRJSON <span class="cov8" title="1">{
+        h := rr.Header()
+        j := RRJSON{
+                Name:  h.Name,
+                Type:  typeToString(h.Rrtype),
+                Class: classToString(h.Class),
+                TTL:   h.Ttl,
+                Data:  map[string]any{},
+        }
+        switch v := rr.(type) </span>{
+        case *dns.A:<span class="cov8" title="1">
+                j.Data["a"] = v.A.String()</span>
+        case *dns.AAAA:<span class="cov8" title="1">
+                j.Data["aaaa"] = v.AAAA.String()</span>
+        case *dns.CNAME:<span class="cov8" title="1">
+                j.Data["target"] = v.Target</span>
+        case *dns.NS:<span class="cov8" title="1">
+                j.Data["ns"] = v.Ns</span>
+        case *dns.PTR:<span class="cov8" title="1">
+                j.Data["ptr"] = v.Ptr</span>
+        case *dns.TXT:<span class="cov8" title="1">
+                j.Data["txt"] = append([]string(nil), v.Txt...)</span>
+        case *dns.MX:<span class="cov8" title="1">
+                j.Data["preference"] = v.Preference
+                j.Data["mx"] = v.Mx</span>
+        case *dns.SRV:<span class="cov8" title="1">
+                j.Data["priority"] = v.Priority
+                j.Data["weight"] = v.Weight
+                j.Data["port"] = v.Port
+                j.Data["target"] = v.Target</span>
+        case *dns.SOA:<span class="cov8" title="1">
+                j.Data["ns"] = v.Ns
+                j.Data["mbox"] = v.Mbox
+                j.Data["serial"] = v.Serial
+                j.Data["refresh"] = v.Refresh
+                j.Data["retry"] = v.Retry
+                j.Data["expire"] = v.Expire
+                j.Data["minttl"] = v.Minttl</span>
+        case *dns.CAA:<span class="cov8" title="1">
+                j.Data["flag"] = v.Flag
+                j.Data["tag"] = v.Tag
+                j.Data["value"] = v.Value</span>
+        case *dns.NAPTR:<span class="cov8" title="1">
+                j.Data["order"] = v.Order
+                j.Data["preference"] = v.Preference
+                j.Data["flags"] = v.Flags
+                j.Data["service"] = v.Service
+                j.Data["regexp"] = v.Regexp
+                j.Data["replacement"] = v.Replacement</span>
+        case *dns.DS:<span class="cov8" title="1">
+                j.Data["key_tag"] = v.KeyTag
+                j.Data["algorithm"] = v.Algorithm
+                j.Data["digest_type"] = v.DigestType
+                j.Data["digest"] = strings.ToLower(v.Digest)</span>
+        case *dns.DNSKEY:<span class="cov8" title="1">
+                j.Data["flags"] = v.Flags
+                j.Data["protocol"] = v.Protocol
+                j.Data["algorithm"] = v.Algorithm
+                j.Data["public_key"] = v.PublicKey</span>
+        case *dns.RRSIG:<span class="cov8" title="1">
+                j.Data["type_covered"] = typeToString(v.TypeCovered)
+                j.Data["algorithm"] = v.Algorithm
+                j.Data["labels"] = v.Labels
+                j.Data["original_ttl"] = v.OrigTtl
+                j.Data["expiration"] = v.Expiration
+                j.Data["inception"] = v.Inception
+                j.Data["key_tag"] = v.KeyTag
+                j.Data["signer_name"] = v.SignerName
+                j.Data["signature"] = v.Signature</span>
+        case *dns.TLSA:<span class="cov8" title="1">
+                j.Data["usage"] = v.Usage
+                j.Data["selector"] = v.Selector
+                j.Data["matching_type"] = v.MatchingType
+                j.Data["cert_data"] = v.Certificate</span>
+        case *dns.OPT:<span class="cov8" title="1">
+                j.Data["udp_size"] = v.UDPSize()
+                j.Data["extended_rcode"] = uint8(v.ExtendedRcode() &gt;&gt; 4) // #nosec G115
+                j.Data["version"] = v.Version()
+                j.Data["do"] = v.Do()
+                j.Data["co"] = v.Co()
+                j.Data["z"] = v.Z()
+                if len(v.Option) &gt; 0 </span><span class="cov8" title="1">{
+                        opts := make([]map[string]any, 0, len(v.Option))
+                        for _, opt := range v.Option </span><span class="cov8" title="1">{
+                                opts = append(opts, ednsOptionToJSON(opt))
+                        }</span>
+                        <span class="cov8" title="1">j.Data["options"] = opts</span>
+                }
+        default:<span class="cov8" title="1">
+                // Fallback to presentation for unknown types to maintain coverage without wire format.
+                j.Data["raw"] = rr.String()</span>
+        }
+        <span class="cov8" title="1">return j</span>
+}
+
+func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
+        var typeCode, classCode uint16
+        if typeCode, err = stringToType(j.Type); err == nil </span><span class="cov8" title="1">{
+                if classCode, err = stringToClass(j.Class); err == nil </span><span class="cov8" title="1">{
+                        // Choose concrete by type
+                        switch typeCode </span>{
+                        case dns.TypeA:<span class="cov8" title="1">
+                                var ip netip.Addr
+                                if ip, err = netip.ParseAddr(getString(j.Data, "a")); err == nil </span><span class="cov8" title="1">{
+                                        if ip.Is4() </span><span class="cov8" title="1">{
+                                                rr = &amp;dns.A{
+                                                        Hdr: rrHdr(j, typeCode, classCode),
+                                                        A:   ip.AsSlice(),
+                                                }
+                                        }</span>
+                                }
+                        case dns.TypeAAAA:<span class="cov8" title="1">
+                                var ip netip.Addr
+                                if ip, err = netip.ParseAddr(getString(j.Data, "aaaa")); err == nil </span><span class="cov8" title="1">{
+                                        if ip.Is6() </span><span class="cov8" title="1">{
+                                                rr = &amp;dns.AAAA{
+                                                        Hdr:  rrHdr(j, typeCode, classCode),
+                                                        AAAA: ip.AsSlice(),
+                                                }
+                                        }</span>
+                                }
+                        case dns.TypeCNAME:<span class="cov8" title="1">
+                                rr = &amp;dns.CNAME{
+                                        Hdr:    rrHdr(j, typeCode, classCode),
+                                        Target: getString(j.Data, "target"),
+                                }</span>
+                        case dns.TypeNS:<span class="cov8" title="1">
+                                rr = &amp;dns.NS{
+                                        Hdr: rrHdr(j, typeCode, classCode),
+                                        Ns:  getString(j.Data, "ns"),
+                                }</span>
+                        case dns.TypePTR:<span class="cov8" title="1">
+                                rr = &amp;dns.PTR{
+                                        Hdr: rrHdr(j, typeCode, classCode),
+                                        Ptr: getString(j.Data, "ptr"),
+                                }</span>
+                        case dns.TypeTXT:<span class="cov8" title="1">
+                                var arr []string
+                                if arr, err = getStringSlice(j.Data, "txt"); err == nil </span><span class="cov8" title="1">{
+                                        rr = &amp;dns.TXT{
+                                                Hdr: rrHdr(j, typeCode, classCode),
+                                                Txt: arr,
+                                        }
+                                }</span>
+                        case dns.TypeMX:<span class="cov8" title="1">
+                                rr = &amp;dns.MX{
+                                        Hdr:        rrHdr(j, typeCode, classCode),
+                                        Preference: getUint16(j.Data, "preference"),
+                                        Mx:         getString(j.Data, "mx"),
+                                }</span>
+                        case dns.TypeSRV:<span class="cov8" title="1">
+                                rr = &amp;dns.SRV{
+                                        Hdr:      rrHdr(j, typeCode, classCode),
+                                        Priority: getUint16(j.Data, "priority"),
+                                        Weight:   getUint16(j.Data, "weight"),
+                                        Port:     getUint16(j.Data, "port"),
+                                        Target:   getString(j.Data, "target"),
+                                }</span>
+                        case dns.TypeSOA:<span class="cov8" title="1">
+                                rr = &amp;dns.SOA{
+                                        Hdr:     rrHdr(j, typeCode, classCode),
+                                        Ns:      getString(j.Data, "ns"),
+                                        Mbox:    getString(j.Data, "mbox"),
+                                        Serial:  getUint32(j.Data, "serial"),
+                                        Refresh: getUint32(j.Data, "refresh"),
+                                        Retry:   getUint32(j.Data, "retry"),
+                                        Expire:  getUint32(j.Data, "expire"),
+                                        Minttl:  getUint32(j.Data, "minttl"),
+                                }</span>
+                        case dns.TypeCAA:<span class="cov8" title="1">
+                                rr = &amp;dns.CAA{
+                                        Hdr:   rrHdr(j, typeCode, classCode),
+                                        Flag:  getUint8(j.Data, "flag"),
+                                        Tag:   getString(j.Data, "tag"),
+                                        Value: getString(j.Data, "value"),
+                                }</span>
+                        case dns.TypeNAPTR:<span class="cov8" title="1">
+                                rr = &amp;dns.NAPTR{
+                                        Hdr:         rrHdr(j, typeCode, classCode),
+                                        Order:       getUint16(j.Data, "order"),
+                                        Preference:  getUint16(j.Data, "preference"),
+                                        Flags:       getString(j.Data, "flags"),
+                                        Service:     getString(j.Data, "service"),
+                                        Regexp:      getString(j.Data, "regexp"),
+                                        Replacement: getString(j.Data, "replacement"),
+                                }</span>
+                        case dns.TypeDS:<span class="cov8" title="1">
+                                rr = &amp;dns.DS{
+                                        Hdr:        rrHdr(j, typeCode, classCode),
+                                        KeyTag:     getUint16(j.Data, "key_tag"),
+                                        Algorithm:  getUint8(j.Data, "algorithm"),
+                                        DigestType: getUint8(j.Data, "digest_type"),
+                                        Digest:     strings.ToUpper(getString(j.Data, "digest")),
+                                }</span>
+                        case dns.TypeDNSKEY:<span class="cov8" title="1">
+                                rr = &amp;dns.DNSKEY{
+                                        Hdr:       rrHdr(j, typeCode, classCode),
+                                        Flags:     getUint16(j.Data, "flags"),
+                                        Protocol:  getUint8(j.Data, "protocol"),
+                                        Algorithm: getUint8(j.Data, "algorithm"),
+                                        PublicKey: getString(j.Data, "public_key"),
+                                }</span>
+                        case dns.TypeRRSIG:<span class="cov8" title="1">
+                                var cov uint16
+                                if cov, err = stringToType(getString(j.Data, "type_covered")); err == nil </span><span class="cov8" title="1">{
+                                        rr = &amp;dns.RRSIG{
+                                                Hdr:         rrHdr(j, typeCode, classCode),
+                                                TypeCovered: cov,
+                                                Algorithm:   getUint8(j.Data, "algorithm"),
+                                                Labels:      getUint8(j.Data, "labels"),
+                                                OrigTtl:     getUint32(j.Data, "original_ttl"),
+                                                Expiration:  getUint32(j.Data, "expiration"),
+                                                Inception:   getUint32(j.Data, "inception"),
+                                                KeyTag:      getUint16(j.Data, "key_tag"),
+                                                SignerName:  getString(j.Data, "signer_name"),
+                                                Signature:   getString(j.Data, "signature"),
+                                        }
+                                }</span>
+                        case dns.TypeTLSA:<span class="cov8" title="1">
+                                rr = &amp;dns.TLSA{
+                                        Hdr:          rrHdr(j, typeCode, classCode),
+                                        Usage:        getUint8(j.Data, "usage"),
+                                        Selector:     getUint8(j.Data, "selector"),
+                                        MatchingType: getUint8(j.Data, "matching_type"),
+                                        Certificate:  getString(j.Data, "cert_data"),
+                                }</span>
+                        case dns.TypeOPT:<span class="cov8" title="1">
+                                opt := &amp;dns.OPT{Hdr: rrHdr(j, typeCode, classCode)}
+                                if _, ok := j.Data["udp_size"]; ok </span><span class="cov8" title="1">{
+                                        opt.SetUDPSize(getUint16(j.Data, "udp_size"))
+                                }</span> else<span class="cov0" title="0"> {
+                                        opt.SetUDPSize(classCode)
+                                }</span>
+                                <span class="cov8" title="1">if _, ok := j.Data["extended_rcode"]; ok </span><span class="cov8" title="1">{
+                                        opt.SetExtendedRcode(uint16(getUint8(j.Data, "extended_rcode")) &lt;&lt; 4)
+                                }</span>
+                                <span class="cov8" title="1">if _, ok := j.Data["version"]; ok </span><span class="cov8" title="1">{
+                                        opt.SetVersion(getUint8(j.Data, "version"))
+                                }</span>
+                                <span class="cov8" title="1">if do, ok := getBool(j.Data, "do"); ok </span><span class="cov8" title="1">{
+                                        opt.SetDo(do)
+                                }</span>
+                                <span class="cov8" title="1">if co, ok := getBool(j.Data, "co"); ok </span><span class="cov8" title="1">{
+                                        opt.SetCo(co)
+                                }</span>
+                                <span class="cov8" title="1">if _, ok := j.Data["z"]; ok </span><span class="cov8" title="1">{
+                                        opt.SetZ(getUint16(j.Data, "z"))
+                                }</span>
+                                <span class="cov8" title="1">if raw, ok := j.Data["options"]; ok </span><span class="cov8" title="1">{
+                                        arr, ok := raw.([]any)
+                                        if !ok </span><span class="cov0" title="0">{
+                                                err = errors.Join(err, errors.New("opt options must be array"))
+                                        }</span> else<span class="cov8" title="1"> {
+                                                for idx, entry := range arr </span><span class="cov8" title="1">{
+                                                        optMap, ok := entry.(map[string]any)
+                                                        if !ok </span><span class="cov0" title="0">{
+                                                                err = errors.Join(err, &amp;optOptionEntryError{index: idx})
+                                                                continue</span>
+                                                        }
+                                                        <span class="cov8" title="1">o, e := ednsOptionFromJSON(optMap)
+                                                        if e != nil </span><span class="cov0" title="0">{
+                                                                err = errors.Join(err, e)
+                                                                continue</span>
+                                                        }
+                                                        <span class="cov8" title="1">opt.Option = append(opt.Option, o)</span>
+                                                }
+                                        }
+                                }
+                                <span class="cov8" title="1">rr = opt</span>
+                        default:<span class="cov8" title="1">
+                                // Best-effort fallback using presentation format stored in data.raw
+                                if rr, err = dns.NewRR(strings.TrimSpace(getString(j.Data, "raw"))); err == nil </span><span class="cov8" title="1">{
+                                        // NewRR does not preserve TTL/class/name from header in raw string if omitted; ensure header set
+                                        if h := rr.Header(); h != nil </span><span class="cov8" title="1">{
+                                                h.Name = j.Name
+                                                h.Class = classCode
+                                                h.Rrtype = typeCode
+                                                h.Ttl = j.TTL
+                                        }</span>
+                                }
+                        }
+                }
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+func ednsOptionToJSON(opt dns.EDNS0) map[string]any <span class="cov8" title="1">{
+        m := map[string]any{
+                "code": optionCodeToString(opt.Option()),
+        }
+        switch o := opt.(type) </span>{
+        case *dns.EDNS0_NSID:<span class="cov8" title="1">
+                m["nsid"] = strings.ToLower(o.Nsid)</span>
+        case *dns.EDNS0_SUBNET:<span class="cov8" title="1">
+                m["family"] = o.Family
+                m["source_netmask"] = o.SourceNetmask
+                m["source_scope"] = o.SourceScope
+                if o.Address != nil </span><span class="cov8" title="1">{
+                        m["address"] = o.Address.String()
+                }</span>
+        case *dns.EDNS0_COOKIE:<span class="cov8" title="1">
+                m["cookie"] = strings.ToLower(o.Cookie)</span>
+        case *dns.EDNS0_UL:<span class="cov8" title="1">
+                m["lease"] = o.Lease
+                m["key_lease"] = o.KeyLease</span>
+        case *dns.EDNS0_LLQ:<span class="cov8" title="1">
+                m["version"] = o.Version
+                m["opcode"] = o.Opcode
+                m["error"] = o.Error
+                m["id"] = o.Id
+                m["lease_life"] = o.LeaseLife</span>
+        case *dns.EDNS0_DAU:<span class="cov8" title="1">
+                m["alg_codes"] = uint8SliceToIntSlice(o.AlgCode)</span>
+        case *dns.EDNS0_DHU:<span class="cov8" title="1">
+                m["alg_codes"] = uint8SliceToIntSlice(o.AlgCode)</span>
+        case *dns.EDNS0_N3U:<span class="cov8" title="1">
+                m["alg_codes"] = uint8SliceToIntSlice(o.AlgCode)</span>
+        case *dns.EDNS0_EXPIRE:<span class="cov8" title="1">
+                m["expire"] = o.Expire
+                if o.Empty </span><span class="cov0" title="0">{
+                        m["empty"] = true
+                }</span>
+        case *dns.EDNS0_LOCAL:<span class="cov8" title="1">
+                m["data"] = strings.ToLower(hex.EncodeToString(o.Data))</span>
+        case *dns.EDNS0_TCP_KEEPALIVE:<span class="cov8" title="1">
+                m["timeout"] = o.Timeout</span>
+        case *dns.EDNS0_PADDING:<span class="cov8" title="1">
+                m["padding"] = strings.ToLower(hex.EncodeToString(o.Padding))</span>
+        case *dns.EDNS0_EDE:<span class="cov8" title="1">
+                m["info_code"] = o.InfoCode
+                m["extra_text"] = o.ExtraText</span>
+        case *dns.EDNS0_ESU:<span class="cov8" title="1">
+                m["uri"] = o.Uri</span>
+        default:<span class="cov0" title="0"></span>
+                // No additional fields for unhandled option types.
+        }
+        <span class="cov8" title="1">return m</span>
+}
+
+func ednsOptionFromJSON(m map[string]any) (dns.EDNS0, error) <span class="cov8" title="1">{
+        codeStr := getString(m, "code")
+        if codeStr == "" </span><span class="cov0" title="0">{
+                return nil, errors.New("opt option missing code")
+        }</span>
+        <span class="cov8" title="1">code, err := stringToOptionCode(codeStr)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, &amp;optOptionCodeError{code: codeStr, err: err}
+        }</span>
+
+        <span class="cov8" title="1">switch code </span>{
+        case dns.EDNS0NSID:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_NSID{Code: code, Nsid: strings.ToLower(getString(m, "nsid"))}, nil</span>
+        case dns.EDNS0SUBNET:<span class="cov8" title="1">
+                opt := &amp;dns.EDNS0_SUBNET{
+                        Code:          code,
+                        Family:        getUint16(m, "family"),
+                        SourceNetmask: getUint8(m, "source_netmask"),
+                        SourceScope:   getUint8(m, "source_scope"),
+                }
+                if addr := getString(m, "address"); addr != "" </span><span class="cov8" title="1">{
+                        if ip := net.ParseIP(addr); ip != nil </span><span class="cov8" title="1">{
+                                opt.Address = ip
+                        }</span>
+                }
+                <span class="cov8" title="1">return opt, nil</span>
+        case dns.EDNS0COOKIE:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_COOKIE{Code: code, Cookie: strings.ToLower(getString(m, "cookie"))}, nil</span>
+        case dns.EDNS0UL:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_UL{Code: code, Lease: getUint32(m, "lease"), KeyLease: getUint32(m, "key_lease")}, nil</span>
+        case dns.EDNS0LLQ:<span class="cov8" title="1">
+                opt := &amp;dns.EDNS0_LLQ{
+                        Code:      code,
+                        Version:   getUint16(m, "version"),
+                        Opcode:    getUint16(m, "opcode"),
+                        Error:     getUint16(m, "error"),
+                        LeaseLife: getUint32(m, "lease_life"),
+                }
+                if raw, ok := m["id"]; ok </span><span class="cov8" title="1">{
+                        id, e := anyToUint64(raw)
+                        if e != nil </span><span class="cov0" title="0">{
+                                return nil, &amp;optOptionCodeError{code: codeStr, err: e}
+                        }</span>
+                        <span class="cov8" title="1">opt.Id = id</span>
+                }
+                <span class="cov8" title="1">return opt, nil</span>
+        case dns.EDNS0DAU:<span class="cov8" title="1">
+                algs, e := getUint8Slice(m, "alg_codes")
+                if e != nil </span><span class="cov0" title="0">{
+                        return nil, &amp;optOptionCodeError{code: codeStr, err: e}
+                }</span>
+                <span class="cov8" title="1">return &amp;dns.EDNS0_DAU{Code: code, AlgCode: algs}, nil</span>
+        case dns.EDNS0DHU:<span class="cov8" title="1">
+                algs, e := getUint8Slice(m, "alg_codes")
+                if e != nil </span><span class="cov0" title="0">{
+                        return nil, &amp;optOptionCodeError{code: codeStr, err: e}
+                }</span>
+                <span class="cov8" title="1">return &amp;dns.EDNS0_DHU{Code: code, AlgCode: algs}, nil</span>
+        case dns.EDNS0N3U:<span class="cov8" title="1">
+                algs, e := getUint8Slice(m, "alg_codes")
+                if e != nil </span><span class="cov0" title="0">{
+                        return nil, &amp;optOptionCodeError{code: codeStr, err: e}
+                }</span>
+                <span class="cov8" title="1">return &amp;dns.EDNS0_N3U{Code: code, AlgCode: algs}, nil</span>
+        case dns.EDNS0EXPIRE:<span class="cov8" title="1">
+                opt := &amp;dns.EDNS0_EXPIRE{Code: code, Expire: getUint32(m, "expire")}
+                if empty, ok := getBool(m, "empty"); ok </span><span class="cov0" title="0">{
+                        opt.Empty = empty
+                }</span>
+                <span class="cov8" title="1">return opt, nil</span>
+        case dns.EDNS0TCPKEEPALIVE:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_TCP_KEEPALIVE{Code: code, Timeout: getUint16(m, "timeout")}, nil</span>
+        case dns.EDNS0PADDING:<span class="cov8" title="1">
+                padding, e := hex.DecodeString(getString(m, "padding"))
+                if e != nil </span><span class="cov0" title="0">{
+                        return nil, &amp;optOptionCodeError{code: codeStr, err: e}
+                }</span>
+                <span class="cov8" title="1">return &amp;dns.EDNS0_PADDING{Padding: padding}, nil</span>
+        case dns.EDNS0EDE:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_EDE{InfoCode: getUint16(m, "info_code"), ExtraText: getString(m, "extra_text")}, nil</span>
+        case dns.EDNS0ESU:<span class="cov8" title="1">
+                return &amp;dns.EDNS0_ESU{Code: code, Uri: getString(m, "uri")}, nil</span>
+        }
+
+        <span class="cov8" title="1">data, err := hex.DecodeString(getString(m, "data"))
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, &amp;optOptionCodeError{code: codeStr, err: err}
+        }</span>
+        <span class="cov8" title="1">return &amp;dns.EDNS0_LOCAL{Code: code, Data: data}, nil</span>
+}
+
+func rrHdr(j RRJSON, t uint16, c uint16) dns.RR_Header <span class="cov8" title="1">{
+        return dns.RR_Header{Name: j.Name, Rrtype: t, Class: c, Ttl: j.TTL}
+}</span>
+
+// --- mapping helpers ---
+
+func typeToString(t uint16) (s string) <span class="cov8" title="1">{
+        var ok bool
+        if s, ok = dns.TypeToString[t]; !ok </span><span class="cov8" title="1">{
+                s = strconv.FormatUint(uint64(t), 10)
+        }</span>
+        <span class="cov8" title="1">return</span>
+}
+
+func stringToType(s string) (typ uint16, err error) <span class="cov8" title="1">{
+        var ok bool
+        if typ, ok = dns.StringToType[strings.ToUpper(s)]; !ok </span><span class="cov8" title="1">{
+                var n uint64
+                if n, err = strconv.ParseUint(s, 10, 16); err == nil </span><span class="cov8" title="1">{
+                        typ = uint16(n)
+                }</span> else<span class="cov8" title="1"> {
+                        err = &amp;unknownTypeError{value: s}
+                }</span>
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+func classToString(c uint16) (s string) <span class="cov8" title="1">{
+        var ok bool
+        if s, ok = dns.ClassToString[c]; !ok </span><span class="cov8" title="1">{
+                s = strconv.FormatUint(uint64(c), 10)
+        }</span>
+        <span class="cov8" title="1">return</span>
+}
+
+func stringToClass(s string) (cls uint16, err error) <span class="cov8" title="1">{
+        var ok bool
+        if cls, ok = dns.StringToClass[strings.ToUpper(s)]; !ok </span><span class="cov8" title="1">{
+                var n uint64
+                if n, err = strconv.ParseUint(s, 10, 16); err == nil </span><span class="cov8" title="1">{
+                        cls = uint16(n)
+                }</span> else<span class="cov8" title="1"> {
+                        err = &amp;unknownClassError{value: s}
+                }</span>
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+var optionCodeToName = map[uint16]string{
+        dns.EDNS0LLQ:          "LLQ",
+        dns.EDNS0UL:           "UL",
+        dns.EDNS0NSID:         "NSID",
+        dns.EDNS0DAU:          "DAU",
+        dns.EDNS0DHU:          "DHU",
+        dns.EDNS0N3U:          "N3U",
+        dns.EDNS0SUBNET:       "SUBNET",
+        dns.EDNS0EXPIRE:       "EXPIRE",
+        dns.EDNS0COOKIE:       "COOKIE",
+        dns.EDNS0TCPKEEPALIVE: "TCPKEEPALIVE",
+        dns.EDNS0PADDING:      "PADDING",
+        dns.EDNS0EDE:          "EDE",
+        dns.EDNS0ESU:          "ESU",
+}
+
+var optionNameToCode = func() map[string]uint16 <span class="cov8" title="1">{
+        out := make(map[string]uint16, len(optionCodeToName)+1)
+        for code, name := range optionCodeToName </span><span class="cov8" title="1">{
+                out[strings.ToUpper(name)] = code
+        }</span>
+        <span class="cov8" title="1">out["TCP_KEEPALIVE"] = dns.EDNS0TCPKEEPALIVE
+        return out</span>
+}()
+
+func optionCodeToString(code uint16) (s string) <span class="cov8" title="1">{
+        var ok bool
+        if s, ok = optionCodeToName[code]; !ok </span><span class="cov8" title="1">{
+                s = strconv.FormatUint(uint64(code), 10)
+        }</span>
+        <span class="cov8" title="1">return</span>
+}
+
+func stringToOptionCode(s string) (code uint16, err error) <span class="cov8" title="1">{
+        var ok bool
+        upper := strings.ToUpper(s)
+        if code, ok = optionNameToCode[upper]; !ok </span><span class="cov8" title="1">{
+                var n uint64
+                if n, err = strconv.ParseUint(s, 10, 16); err == nil </span><span class="cov8" title="1">{
+                        code = uint16(n)
+                }</span> else<span class="cov0" title="0"> {
+                        err = &amp;unknownOptionError{value: s}
+                }</span>
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+func stringToOpcode(s string) (opcode int) <span class="cov8" title="1">{
+        opcode = dns.OpcodeQuery
+        if op, ok := dns.StringToOpcode[strings.ToUpper(s)]; ok </span><span class="cov8" title="1">{
+                opcode = op
+        }</span>
+        <span class="cov8" title="1">return</span>
+}
+
+func stringToRcode(s string) (rcode int) <span class="cov8" title="1">{
+        rcode = dns.RcodeSuccess
+        if rc, ok := dns.StringToRcode[strings.ToUpper(s)]; ok </span><span class="cov8" title="1">{
+                rcode = rc
+        }</span>
+        <span class="cov8" title="1">return</span>
+}
+
+// --- small JSON helpers ---
+
+func getString(m map[string]any, key string) (s string) <span class="cov8" title="1">{
+        if m != nil </span><span class="cov8" title="1">{
+                if v, ok := m[key]; ok </span><span class="cov8" title="1">{
+                        s, _ = v.(string)
+                }</span>
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+func getUint8(m map[string]any, key string) uint8 <span class="cov8" title="1">{
+        return uint8(getInt(m, key)) // #nosec G115
+}</span>
+func getUint16(m map[string]any, key string) uint16 <span class="cov8" title="1">{
+        return uint16(getInt(m, key)) // #nosec G115
+}</span>
+func getUint32(m map[string]any, key string) uint32 <span class="cov8" title="1">{
+        return uint32(getInt(m, key)) // #nosec G115
+}</span>
+
+func getInt(m map[string]any, key string) (n int64) <span class="cov8" title="1">{
+        if m != nil </span><span class="cov8" title="1">{
+                if v, ok := m[key]; ok </span><span class="cov8" title="1">{
+                        switch t := v.(type) </span>{
+                        case float64:<span class="cov8" title="1">
+                                n = int64(t)</span>
+                        case int:<span class="cov8" title="1">
+                                n = int64(t)</span>
+                        case int64:<span class="cov8" title="1">
+                                n = t</span>
+                        case json.Number:<span class="cov8" title="1">
+                                n, _ = t.Int64()</span>
+                        case string:<span class="cov8" title="1">
+                                n, _ = strconv.ParseInt(t, 10, 64)</span>
+                        }
+                }
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+func getStringSlice(m map[string]any, key string) (out []string, err error) <span class="cov8" title="1">{
+        if v, ok := m[key]; ok </span><span class="cov8" title="1">{
+                a, ok := v.([]any)
+                if !ok </span><span class="cov8" title="1">{
+                        return nil, &amp;stringSliceError{key: key}
+                }</span>
+                <span class="cov8" title="1">for _, it := range a </span><span class="cov8" title="1">{
+                        s, ok := it.(string)
+                        if !ok </span><span class="cov8" title="1">{
+                                return nil, &amp;stringSliceError{key: key}
+                        }</span>
+                        <span class="cov8" title="1">out = append(out, s)</span>
+                }
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+func getBool(m map[string]any, key string) (bool, bool) <span class="cov8" title="1">{
+        if m != nil </span><span class="cov8" title="1">{
+                if v, ok := m[key]; ok </span><span class="cov8" title="1">{
+                        switch t := v.(type) </span>{
+                        case bool:<span class="cov8" title="1">
+                                return t, true</span>
+                        case string:<span class="cov8" title="1">
+                                if b, err := strconv.ParseBool(t); err == nil </span><span class="cov8" title="1">{
+                                        return b, true
+                                }</span>
+                        case float64:<span class="cov8" title="1">
+                                return t != 0, true</span>
+                        case json.Number:<span class="cov8" title="1">
+                                if n, err := t.Int64(); err == nil </span><span class="cov8" title="1">{
+                                        return n != 0, true
+                                }</span>
+                        }
+                }
+        }
+        <span class="cov8" title="1">return false, false</span>
+}
+
+func getUint8Slice(m map[string]any, key string) (out []uint8, err error) <span class="cov8" title="1">{
+        if m != nil </span><span class="cov8" title="1">{
+                if raw, ok := m[key]; ok </span><span class="cov8" title="1">{
+                        arr, ok := raw.([]any)
+                        if !ok </span><span class="cov8" title="1">{
+                                return nil, &amp;keyArrayError{key: key}
+                        }</span>
+                        <span class="cov8" title="1">for idx, v := range arr </span><span class="cov8" title="1">{
+                                val, e := anyToUint64(v)
+                                if e != nil </span><span class="cov8" title="1">{
+                                        return nil, &amp;keyIndexError{key: key, index: idx, err: e}
+                                }</span>
+                                <span class="cov8" title="1">if val &gt; math.MaxUint8 </span><span class="cov8" title="1">{
+                                        return nil, &amp;keyIndexRangeError{key: key, index: idx}
+                                }</span>
+                                <span class="cov8" title="1">out = append(out, uint8(val))</span>
+                        }
+                }
+        }
+        <span class="cov8" title="1">return</span>
+}
+
+func anyToUint64(v any) (uint64, error) <span class="cov8" title="1">{
+        switch t := v.(type) </span>{
+        case float64:<span class="cov8" title="1">
+                if t &lt; 0 </span><span class="cov8" title="1">{
+                        return 0, ErrNegativeValue
+                }</span>
+                <span class="cov8" title="1">return uint64(t), nil</span>
+        case json.Number:<span class="cov8" title="1">
+                if s := t.String(); s != "" </span><span class="cov8" title="1">{
+                        if n, err := strconv.ParseUint(s, 10, 64); err == nil </span><span class="cov8" title="1">{
+                                return n, nil
+                        }</span>
+                }
+                <span class="cov8" title="1">if n, err := t.Int64(); err == nil </span><span class="cov0" title="0">{
+                        if n &lt; 0 </span><span class="cov0" title="0">{
+                                return 0, ErrNegativeValue
+                        }</span>
+                        <span class="cov0" title="0">return uint64(n), nil</span>
+                }
+                <span class="cov8" title="1">return 0, ErrInvalidNumber</span>
+        case string:<span class="cov8" title="1">
+                if t == "" </span><span class="cov0" title="0">{
+                        return 0, nil
+                }</span>
+                <span class="cov8" title="1">n, err := strconv.ParseUint(t, 10, 64)
+                if err != nil </span><span class="cov0" title="0">{
+                        return 0, err
+                }</span>
+                <span class="cov8" title="1">return n, nil</span>
+        case int:<span class="cov8" title="1">
+                if t &lt; 0 </span><span class="cov8" title="1">{
+                        return 0, ErrNegativeValue
+                }</span>
+                <span class="cov0" title="0">return uint64(t), nil</span>
+        case int64:<span class="cov0" title="0">
+                if t &lt; 0 </span><span class="cov0" title="0">{
+                        return 0, ErrNegativeValue
+                }</span>
+                <span class="cov0" title="0">return uint64(t), nil</span>
+        case uint8:<span class="cov8" title="1">
+                return uint64(t), nil</span>
+        case uint16:<span class="cov0" title="0">
+                return uint64(t), nil</span>
+        case uint32:<span class="cov0" title="0">
+                return uint64(t), nil</span>
+        case uint64:<span class="cov0" title="0">
+                return t, nil</span>
+        default:<span class="cov8" title="1">
+                return 0, &amp;invalidNumberTypeError{value: v}</span>
+        }
+}
+
+func uint8SliceToIntSlice(in []uint8) []int <span class="cov8" title="1">{
+        out := make([]int, 0, len(in))
+        for _, v := range in </span><span class="cov8" title="1">{
+                out = append(out, int(v))
+        }</span>
+        <span class="cov8" title="1">return out</span>
+}
+
+type wrappedError struct {
+        sentinel error
+        err      error
+}
+
+func wrapError(sentinel, err error) (out error) <span class="cov8" title="1">{
+        if err != nil </span><span class="cov8" title="1">{
+                out = &amp;wrappedError{sentinel: sentinel, err: err}
+        }</span>
+        <span class="cov8" title="1">return</span>
+}
+
+func (w *wrappedError) Error() string <span class="cov8" title="1">{
+        return w.sentinel.Error() + ": " + w.err.Error()
+}</span>
+
+func (w *wrappedError) Unwrap() error <span class="cov8" title="1">{
+        return w.err
+}</span>
+
+func (w *wrappedError) Is(target error) bool <span class="cov8" title="1">{
+        return target == w.sentinel || errors.Is(w.err, target)
+}</span>
+
+type unknownTypeError struct {
+        value string
+}
+
+func (e *unknownTypeError) Error() string <span class="cov8" title="1">{
+        return "unknown type " + strconv.Quote(e.value)
+}</span>
+
+func (e *unknownTypeError) Is(target error) bool <span class="cov8" title="1">{
+        return target == ErrUnknownType
+}</span>
+
+type unknownClassError struct {
+        value string
+}
+
+func (e *unknownClassError) Error() string <span class="cov8" title="1">{
+        return "unknown class " + strconv.Quote(e.value)
+}</span>
+
+func (e *unknownClassError) Is(target error) bool <span class="cov8" title="1">{
+        return target == ErrUnknownClass
+}</span>
+
+type unknownOptionError struct {
+        value string
+}
+
+func (e *unknownOptionError) Error() string <span class="cov0" title="0">{
+        return "unknown option code " + strconv.Quote(e.value)
+}</span>
+
+type stringSliceError struct {
+        key string
+}
+
+func (e *stringSliceError) Error() string <span class="cov8" title="1">{
+        return e.key + " must be array of strings"
+}</span>
+
+func (e *stringSliceError) Is(target error) bool <span class="cov8" title="1">{
+        return target == ErrInvalidStringSlice
+}</span>
+
+type optOptionEntryError struct {
+        index int
+}
+
+func (e *optOptionEntryError) Error() string <span class="cov0" title="0">{
+        return "opt options[" + strconv.Itoa(e.index) + "] must be object"
+}</span>
+
+func (e *optOptionEntryError) Is(target error) bool <span class="cov0" title="0">{
+        return target == ErrEDNSOptionEntry
+}</span>
+
+type optOptionCodeError struct {
+        code string
+        err  error
+}
+
+func (e *optOptionCodeError) Error() string <span class="cov0" title="0">{
+        if e.err == nil </span><span class="cov0" title="0">{
+                return "opt option " + e.code
+        }</span>
+        <span class="cov0" title="0">return "opt option " + e.code + ": " + e.err.Error()</span>
+}
+
+func (e *optOptionCodeError) Unwrap() error <span class="cov0" title="0">{
+        return e.err
+}</span>
+
+func (e *optOptionCodeError) Is(target error) bool <span class="cov0" title="0">{
+        return target == ErrEDNSOption || errors.Is(e.err, target)
+}</span>
+
+type keyArrayError struct {
+        key string
+}
+
+func (e *keyArrayError) Error() string <span class="cov0" title="0">{
+        return e.key + " must be array"
+}</span>
+
+func (e *keyArrayError) Is(target error) bool <span class="cov8" title="1">{
+        return target == ErrUint8SliceType
+}</span>
+
+type keyIndexError struct {
+        key   string
+        index int
+        err   error
+}
+
+func (e *keyIndexError) Error() string <span class="cov0" title="0">{
+        if e.err == nil </span><span class="cov0" title="0">{
+                return e.key + "[" + strconv.Itoa(e.index) + "]"
+        }</span>
+        <span class="cov0" title="0">return e.key + "[" + strconv.Itoa(e.index) + "]: " + e.err.Error()</span>
+}
+
+func (e *keyIndexError) Unwrap() error <span class="cov0" title="0">{
+        return e.err
+}</span>
+
+func (e *keyIndexError) Is(target error) bool <span class="cov8" title="1">{
+        return target == ErrUint8SliceElement || errors.Is(e.err, target)
+}</span>
+
+type keyIndexRangeError struct {
+        key   string
+        index int
+}
+
+func (e *keyIndexRangeError) Error() string <span class="cov0" title="0">{
+        return e.key + "[" + strconv.Itoa(e.index) + "]: value out of range"
+}</span>
+
+func (e *keyIndexRangeError) Is(target error) bool <span class="cov8" title="1">{
+        return target == ErrUint8SliceRange
+}</span>
+
+type invalidNumberTypeError struct {
+        value any
+}
+
+func (e *invalidNumberTypeError) Error() string <span class="cov0" title="0">{
+        typeName := "&lt;nil&gt;"
+        if e.value != nil </span><span class="cov0" title="0">{
+                typeName = reflect.TypeOf(e.value).String()
+        }</span>
+        <span class="cov0" title="0">return "invalid number type " + typeName</span>
+}
+
+func (e *invalidNumberTypeError) Is(target error) bool <span class="cov8" title="1">{
+        return target == ErrInvalidNumberType
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
