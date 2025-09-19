@@ -74,15 +74,15 @@ var (
 
 // MessageJSON is the top-level JSON shape for dns.Msg.
 type MessageJSON struct {
-	ID       uint16     `json:"id"`
-	MsgHdr   MsgHdr     `json:"msgHdr"`
-	Question []Question `json:"question"`
-	Answer   []RRJSON   `json:"answer,omitempty"`
-	Ns       []RRJSON   `json:"ns,omitempty"`
-	Extra    []RRJSON   `json:"extra,omitempty"`
+	ID       uint16         `json:"id"`
+	MsgHdr   MsgHdrJSON     `json:"msgHdr"`
+	Question []QuestionJSON `json:"question"`
+	Answer   []RRJSON       `json:"answer,omitempty"`
+	Ns       []RRJSON       `json:"ns,omitempty"`
+	Extra    []RRJSON       `json:"extra,omitempty"`
 }
 
-type MsgHdr struct {
+type MsgHdrJSON struct {
 	QR     bool   `json:"qr,omitempty"`
 	Opcode string `json:"opcode"`
 	AA     bool   `json:"aa,omitempty"`
@@ -95,7 +95,7 @@ type MsgHdr struct {
 	Rcode  string `json:"rcode"`
 }
 
-type Question struct {
+type QuestionJSON struct {
 	Name   string `json:"name"`
 	Qtype  string `json:"qtype"`
 	Qclass string `json:"qclass"`
@@ -122,7 +122,7 @@ func (m *Msg) MarshalJSON() (b []byte, err error) {
 		}
 		// Questions
 		for _, q := range m.Question {
-			j.Question = append(j.Question, Question{
+			j.Question = append(j.Question, QuestionJSON{
 				Name:   q.Name,
 				Qtype:  typeToString(q.Qtype),
 				Qclass: classToString(q.Qclass),
@@ -168,8 +168,8 @@ func (msg *Msg) UnmarshalJSON(data []byte) (err error) {
 
 // --- helpers ---
 
-func hdrToJSON(h dns.MsgHdr) MsgHdr {
-	return MsgHdr{
+func hdrToJSON(h dns.MsgHdr) MsgHdrJSON {
+	return MsgHdrJSON{
 		QR:     h.Response,
 		Opcode: dns.OpcodeToString[h.Opcode],
 		AA:     h.Authoritative,
@@ -183,7 +183,7 @@ func hdrToJSON(h dns.MsgHdr) MsgHdr {
 	}
 }
 
-func hdrFromJSON(j MsgHdr) (mh dns.MsgHdr) {
+func hdrFromJSON(j MsgHdrJSON) (mh dns.MsgHdr) {
 	mh.Response = j.QR
 	mh.Opcode = stringToOpcode(j.Opcode)
 	mh.Authoritative = j.AA
