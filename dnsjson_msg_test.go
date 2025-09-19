@@ -31,6 +31,7 @@ func TestMsgJSONRoundTrip(t *testing.T) {
 		dns.TypeDNSKEY: "DNSKEY",
 		dns.TypeRRSIG:  "RRSIG",
 		dns.TypeTLSA:   "TLSA",
+		dns.TypeOPT:    "OPT",
 		fallbackType:   "TYPE65280",
 	}
 
@@ -118,6 +119,32 @@ func messageFixtures(t *testing.T) map[string]*dns.Msg {
 	fallbackRR.Header().Rrtype = fallbackType
 	fallbackRR.Header().Ttl = 3600
 
+	edns := new(dns.OPT)
+	edns.Hdr.Name = "."
+	edns.Hdr.Rrtype = dns.TypeOPT
+	edns.SetUDPSize(1232)
+	edns.SetExtendedRcode(0x5A << 4)
+	edns.SetVersion(1)
+	edns.SetDo(true)
+	edns.SetCo(true)
+	edns.SetZ(0x1234)
+	edns.Option = append(edns.Option,
+		&dns.EDNS0_NSID{Code: dns.EDNS0NSID, Nsid: "31323334"},
+		&dns.EDNS0_SUBNET{Code: dns.EDNS0SUBNET, Family: 1, SourceNetmask: 24, SourceScope: 0, Address: net.IPv4(198, 51, 100, 0)},
+		&dns.EDNS0_COOKIE{Code: dns.EDNS0COOKIE, Cookie: "00112233445566778899aabbccddeeff"},
+		&dns.EDNS0_UL{Code: dns.EDNS0UL, Lease: 3600, KeyLease: 7200},
+		&dns.EDNS0_LLQ{Code: dns.EDNS0LLQ, Version: 1, Opcode: 2, Error: 0, Id: 123456789, LeaseLife: 600},
+		&dns.EDNS0_DAU{Code: dns.EDNS0DAU, AlgCode: []uint8{8, 13}},
+		&dns.EDNS0_DHU{Code: dns.EDNS0DHU, AlgCode: []uint8{1, 2}},
+		&dns.EDNS0_N3U{Code: dns.EDNS0N3U, AlgCode: []uint8{1}},
+		&dns.EDNS0_EXPIRE{Code: dns.EDNS0EXPIRE, Expire: 86400},
+		&dns.EDNS0_LOCAL{Code: dns.EDNS0LOCALSTART + 1, Data: []byte{0xDE, 0xAD, 0xBE, 0xEF}},
+		&dns.EDNS0_TCP_KEEPALIVE{Code: dns.EDNS0TCPKEEPALIVE, Timeout: 10},
+		&dns.EDNS0_PADDING{Padding: []byte{0x00, 0x01, 0x02, 0x03}},
+		&dns.EDNS0_EDE{InfoCode: dns.ExtendedErrorCodeBlocked, ExtraText: "blocked"},
+		&dns.EDNS0_ESU{Code: dns.EDNS0ESU, Uri: "sip:example.com"},
+	)
+
 	full := &dns.Msg{
 		MsgHdr: dns.MsgHdr{
 			Id:                 4242,
@@ -202,6 +229,7 @@ func messageFixtures(t *testing.T) map[string]*dns.Msg {
 				MatchingType: 1,
 				Certificate:  "abcdef1234567890",
 			},
+			edns,
 			fallbackRR,
 		},
 	}
