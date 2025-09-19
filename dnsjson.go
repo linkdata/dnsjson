@@ -477,26 +477,25 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 					opt.SetZ(getUint16(j.Data, "z"))
 				}
 				if raw, ok := j.Data["options"]; ok {
-					arr, ok := raw.([]any)
-					if !ok {
-						err = errors.Join(err, ErrEDNSOptionsNotArray)
-					} else {
+					err = ErrEDNSOptionsNotArray
+					if arr, ok := raw.([]any); ok {
+						err = nil
 						for idx, entry := range arr {
-							optMap, ok := entry.(map[string]any)
-							if !ok {
+							if optMap, ok := entry.(map[string]any); ok {
+								if option, e := ednsOptionFromJSON(optMap); e == nil {
+									opt.Option = append(opt.Option, option)
+								} else {
+									err = errors.Join(err, &optOptionEntryError{index: idx})
+								}
+							} else {
 								err = errors.Join(err, &optOptionEntryError{index: idx})
-								continue
 							}
-							o, e := ednsOptionFromJSON(optMap)
-							if e != nil {
-								err = errors.Join(err, e)
-								continue
-							}
-							opt.Option = append(opt.Option, o)
 						}
 					}
 				}
-				rr = opt
+				if err == nil {
+					rr = opt
+				}
 			default:
 				// Best-effort fallback using presentation format stored in data.raw
 				if rr, err = dns.NewRR(strings.TrimSpace(getString(j.Data, "raw"))); err == nil {
