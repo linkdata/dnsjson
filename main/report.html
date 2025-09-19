@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (99.5%)</option>
+				<option value="file0">github.com/linkdata/dnsjson/dnsjson.go (100.0%)</option>
 				
 				</select>
 			</div>
@@ -117,7 +117,6 @@ package dnsjson
 import (
         "encoding/json"
         "errors"
-        "fmt"
         "net/netip"
         "strconv"
         "strings"
@@ -501,20 +500,15 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) <span class="cov8" title="1">{
                                 }</span>
                         default:<span class="cov8" title="1">
                                 // Best-effort fallback using presentation format stored in data.raw
-                                raw := getString(j.Data, "raw")
-                                if raw == "" </span><span class="cov0" title="0">{
-                                        // try to synthesize: "Name TTL Class Type &lt;empty&gt;"
-                                        raw = fmt.Sprintf("%s %d %s %s", j.Name, j.TTL, j.Class, j.Type)
-                                }</span>
-                                <span class="cov8" title="1">if rr, err = dns.NewRR(raw); err == nil </span><span class="cov8" title="1">{
+                                if rr, err = dns.NewRR(strings.TrimSpace(getString(j.Data, "raw"))); err == nil </span><span class="cov8" title="1">{
                                         // NewRR does not preserve TTL/class/name from header in raw string if omitted; ensure header set
-                                        h := rr.Header()
-                                        h.Name, h.Class, h.Rrtype, h.Ttl = j.Name, classCode, typeCode, j.TTL
-                                        rr.Header().Name = h.Name
-                                        rr.Header().Class = h.Class
-                                        rr.Header().Rrtype = h.Rrtype
-                                        rr.Header().Ttl = h.Ttl
-                                }</span>
+                                        if h := rr.Header(); h != nil </span><span class="cov8" title="1">{
+                                                h.Name = j.Name
+                                                h.Class = classCode
+                                                h.Rrtype = typeCode
+                                                h.Ttl = j.TTL
+                                        }</span>
+                                }
                         }
                 }
         }
