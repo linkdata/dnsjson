@@ -304,7 +304,7 @@ func rrToJSON(rr dns.RR) RRJSON {
 		j.Data["cert_data"] = v.Certificate
 	case *dns.OPT:
 		j.Data["udp_size"] = v.UDPSize()
-		j.Data["extended_rcode"] = uint8(v.ExtendedRcode() >> 4) // #nosec G115
+		j.Data["extended_rcode"] = uint16(v.ExtendedRcode()) // #nosec G115
 		j.Data["version"] = v.Version()
 		j.Data["do"] = v.Do()
 		j.Data["co"] = v.Co()
@@ -456,13 +456,13 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 				}
 			case dns.TypeOPT:
 				opt := &dns.OPT{Hdr: rrHdr(j, typeCode, classCode)}
+				udp_size := classCode
 				if _, ok := j.Data["udp_size"]; ok {
-					opt.SetUDPSize(getUint16(j.Data, "udp_size"))
-				} else {
-					opt.SetUDPSize(classCode)
+					udp_size = getUint16(j.Data, "udp_size")
 				}
+				opt.SetUDPSize(udp_size)
 				if _, ok := j.Data["extended_rcode"]; ok {
-					opt.SetExtendedRcode(uint16(getUint8(j.Data, "extended_rcode")) << 4)
+					opt.SetExtendedRcode(getUint16(j.Data, "extended_rcode"))
 				}
 				if _, ok := j.Data["version"]; ok {
 					opt.SetVersion(getUint8(j.Data, "version"))
