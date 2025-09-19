@@ -47,10 +47,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
 	"net"
 	"net/netip"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -74,6 +74,14 @@ var (
 	ErrUnknownType        = errors.New("unknown type")
 	ErrUnknownClass       = errors.New("unknown class")
 	ErrInvalidStringSlice = errors.New("invalid string slice")
+	ErrEDNSOptionEntry    = errors.New("edns option entry type")
+	ErrEDNSOption         = errors.New("edns option")
+	ErrUint8SliceType     = errors.New("uint8 slice type")
+	ErrUint8SliceElement  = errors.New("uint8 slice element")
+	ErrUint8SliceRange    = errors.New("uint8 slice range")
+	ErrNegativeValue      = errors.New("negative value")
+	ErrInvalidNumber      = errors.New("invalid number")
+	ErrInvalidNumberType  = errors.New("invalid number type")
 )
 
 // MessageJSON is the top-level JSON shape for dns.Msg.
@@ -475,7 +483,7 @@ func rrFromJSON(j RRJSON) (rr dns.RR, err error) {
 						for idx, entry := range arr {
 							optMap, ok := entry.(map[string]any)
 							if !ok {
-								err = errors.Join(err, fmt.Errorf("opt options[%d] must be object", idx))
+								err = errors.Join(err, &optOptionEntryError{index: idx})
 								continue
 							}
 							o, e := ednsOptionFromJSON(optMap)
@@ -565,7 +573,7 @@ func ednsOptionFromJSON(m map[string]any) (dns.EDNS0, error) {
 	}
 	code, err := stringToOptionCode(codeStr)
 	if err != nil {
-		return nil, fmt.Errorf("opt option %s: %w", codeStr, err)
+		return nil, &optOptionCodeError{code: codeStr, err: err}
 	}
 
 	switch code {
@@ -599,7 +607,7 @@ func ednsOptionFromJSON(m map[string]any) (dns.EDNS0, error) {
 		if raw, ok := m["id"]; ok {
 			id, e := anyToUint64(raw)
 			if e != nil {
-				return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+				return nil, &optOptionCodeError{code: codeStr, err: e}
 			}
 			opt.Id = id
 		}
@@ -607,19 +615,19 @@ func ednsOptionFromJSON(m map[string]any) (dns.EDNS0, error) {
 	case dns.EDNS0DAU:
 		algs, e := getUint8Slice(m, "alg_codes")
 		if e != nil {
-			return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+			return nil, &optOptionCodeError{code: codeStr, err: e}
 		}
 		return &dns.EDNS0_DAU{Code: code, AlgCode: algs}, nil
 	case dns.EDNS0DHU:
 		algs, e := getUint8Slice(m, "alg_codes")
 		if e != nil {
-			return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+			return nil, &optOptionCodeError{code: codeStr, err: e}
 		}
 		return &dns.EDNS0_DHU{Code: code, AlgCode: algs}, nil
 	case dns.EDNS0N3U:
 		algs, e := getUint8Slice(m, "alg_codes")
 		if e != nil {
-			return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+			return nil, &optOptionCodeError{code: codeStr, err: e}
 		}
 		return &dns.EDNS0_N3U{Code: code, AlgCode: algs}, nil
 	case dns.EDNS0EXPIRE:
@@ -633,7 +641,7 @@ func ednsOptionFromJSON(m map[string]any) (dns.EDNS0, error) {
 	case dns.EDNS0PADDING:
 		padding, e := hex.DecodeString(getString(m, "padding"))
 		if e != nil {
-			return nil, fmt.Errorf("opt option %s: %w", codeStr, e)
+			return nil, &optOptionCodeError{code: codeStr, err: e}
 		}
 		return &dns.EDNS0_PADDING{Padding: padding}, nil
 	case dns.EDNS0EDE:
@@ -644,7 +652,7 @@ func ednsOptionFromJSON(m map[string]any) (dns.EDNS0, error) {
 
 	data, err := hex.DecodeString(getString(m, "data"))
 	if err != nil {
-		return nil, fmt.Errorf("opt option %s: %w", codeStr, err)
+		return nil, &optOptionCodeError{code: codeStr, err: err}
 	}
 	return &dns.EDNS0_LOCAL{Code: code, Data: data}, nil
 }
@@ -845,15 +853,15 @@ func getUint8Slice(m map[string]any, key string) (out []uint8, err error) {
 		if raw, ok := m[key]; ok {
 			arr, ok := raw.([]any)
 			if !ok {
-				return nil, fmt.Errorf("%s must be array", key)
+				return nil, &keyArrayError{key: key}
 			}
 			for idx, v := range arr {
 				val, e := anyToUint64(v)
 				if e != nil {
-					return nil, fmt.Errorf("%s[%d]: %w", key, idx, e)
+					return nil, &keyIndexError{key: key, index: idx, err: e}
 				}
 				if val > math.MaxUint8 {
-					return nil, fmt.Errorf("%s[%d]: value out of range", key, idx)
+					return nil, &keyIndexRangeError{key: key, index: idx}
 				}
 				out = append(out, uint8(val))
 			}
@@ -866,7 +874,7 @@ func anyToUint64(v any) (uint64, error) {
 	switch t := v.(type) {
 	case float64:
 		if t < 0 {
-			return 0, fmt.Errorf("negative value")
+			return 0, ErrNegativeValue
 		}
 		return uint64(t), nil
 	case json.Number:
@@ -877,11 +885,11 @@ func anyToUint64(v any) (uint64, error) {
 		}
 		if n, err := t.Int64(); err == nil {
 			if n < 0 {
-				return 0, fmt.Errorf("negative value")
+				return 0, ErrNegativeValue
 			}
 			return uint64(n), nil
 		}
-		return 0, fmt.Errorf("invalid number")
+		return 0, ErrInvalidNumber
 	case string:
 		if t == "" {
 			return 0, nil
@@ -893,12 +901,12 @@ func anyToUint64(v any) (uint64, error) {
 		return n, nil
 	case int:
 		if t < 0 {
-			return 0, fmt.Errorf("negative value")
+			return 0, ErrNegativeValue
 		}
 		return uint64(t), nil
 	case int64:
 		if t < 0 {
-			return 0, fmt.Errorf("negative value")
+			return 0, ErrNegativeValue
 		}
 		return uint64(t), nil
 	case uint8:
@@ -910,7 +918,7 @@ func anyToUint64(v any) (uint64, error) {
 	case uint64:
 		return t, nil
 	default:
-		return 0, fmt.Errorf("invalid number type %T", v)
+		return 0, &invalidNumberTypeError{value: v}
 	}
 }
 
@@ -988,4 +996,98 @@ func (e *stringSliceError) Error() string {
 
 func (e *stringSliceError) Is(target error) bool {
 	return target == ErrInvalidStringSlice
+}
+
+type optOptionEntryError struct {
+	index int
+}
+
+func (e *optOptionEntryError) Error() string {
+	return "opt options[" + strconv.Itoa(e.index) + "] must be object"
+}
+
+func (e *optOptionEntryError) Is(target error) bool {
+	return target == ErrEDNSOptionEntry
+}
+
+type optOptionCodeError struct {
+	code string
+	err  error
+}
+
+func (e *optOptionCodeError) Error() string {
+	if e.err == nil {
+		return "opt option " + e.code
+	}
+	return "opt option " + e.code + ": " + e.err.Error()
+}
+
+func (e *optOptionCodeError) Unwrap() error {
+	return e.err
+}
+
+func (e *optOptionCodeError) Is(target error) bool {
+	return target == ErrEDNSOption || errors.Is(e.err, target)
+}
+
+type keyArrayError struct {
+	key string
+}
+
+func (e *keyArrayError) Error() string {
+	return e.key + " must be array"
+}
+
+func (e *keyArrayError) Is(target error) bool {
+	return target == ErrUint8SliceType
+}
+
+type keyIndexError struct {
+	key   string
+	index int
+	err   error
+}
+
+func (e *keyIndexError) Error() string {
+	if e.err == nil {
+		return e.key + "[" + strconv.Itoa(e.index) + "]"
+	}
+	return e.key + "[" + strconv.Itoa(e.index) + "]: " + e.err.Error()
+}
+
+func (e *keyIndexError) Unwrap() error {
+	return e.err
+}
+
+func (e *keyIndexError) Is(target error) bool {
+	return target == ErrUint8SliceElement || errors.Is(e.err, target)
+}
+
+type keyIndexRangeError struct {
+	key   string
+	index int
+}
+
+func (e *keyIndexRangeError) Error() string {
+	return e.key + "[" + strconv.Itoa(e.index) + "]: value out of range"
+}
+
+func (e *keyIndexRangeError) Is(target error) bool {
+	return target == ErrUint8SliceRange
+}
+
+type invalidNumberTypeError struct {
+	value any
+}
+
+func (e *invalidNumberTypeError) Error() string {
+	typeName := "<nil>"
+	if e.value != nil {
+		typeName = reflect.TypeOf(e.value).String()
+	}
+	return "invalid number type " + typeName
+}
+
+func (e *invalidNumberTypeError) Is(target error) bool {
+	return target == ErrInvalidNumberType
 }
