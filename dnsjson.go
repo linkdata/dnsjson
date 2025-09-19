@@ -63,11 +63,11 @@ var _ json.Marshaler = &Msg{}
 var _ json.Unmarshaler = &Msg{}
 
 var (
-	ErrEmptyInput         = errors.New("dnsjson: empty input")
-	ErrInvalidJSON        = errors.New("dnsjson: invalid JSON")
-	ErrInvalidMessage     = errors.New("dnsjson: invalid message")
-	ErrQuestionQType      = errors.New("dnsjson: question qtype")
-	ErrQuestionQClass     = errors.New("dnsjson: question qclass")
+	ErrEmptyInput         = errors.New("empty input")
+	ErrInvalidJSON        = errors.New("invalid JSON")
+	ErrInvalidMessage     = errors.New("invalid message")
+	ErrQuestionQType      = errors.New("question qtype")
+	ErrQuestionQClass     = errors.New("question qclass")
 	ErrAnswerSection      = errors.New("answer")
 	ErrNsSection          = errors.New("ns")
 	ErrExtraSection       = errors.New("extra")
@@ -295,7 +295,7 @@ func rrToJSON(rr dns.RR) RRJSON {
 		j.Data["cert_data"] = v.Certificate
 	case *dns.OPT:
 		j.Data["udp_size"] = v.UDPSize()
-		j.Data["extended_rcode"] = uint8(v.ExtendedRcode() >> 4)
+		j.Data["extended_rcode"] = uint8(v.ExtendedRcode() >> 4) // #nosec G115
 		j.Data["version"] = v.Version()
 		j.Data["do"] = v.Do()
 		j.Data["co"] = v.Co()
